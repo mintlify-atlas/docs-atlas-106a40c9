@@ -412,3 +412,135 @@ Retrieve comprehensive information about a specific kit by its ID, including tea
 <Note>
 Results are cached for optimal performance.
 </Note>
+
+---
+
+## Get Random Kits
+
+Retrieve a paginated list of random kits for discovery and browsing.
+
+### Endpoint
+
+```http
+GET /api/random-kits/
+```
+
+### Query Parameters
+
+<ParamField query="page" type="integer" default="1">
+  Page number (must be ≥ 1)
+</ParamField>
+
+<ParamField query="page_size" type="integer" default="20">
+  Number of items per page (max: 100)
+</ParamField>
+
+### Response
+
+Returns a paginated array of kit objects with reduced schema for performance.
+
+<ResponseField name="kits" type="array">
+  Array of random kit objects
+</ResponseField>
+
+<ResponseField name="kits[].id" type="integer">
+  Kit ID
+</ResponseField>
+
+<ResponseField name="kits[].name" type="string">
+  Kit name
+</ResponseField>
+
+<ResponseField name="kits[].slug" type="string">
+  Kit slug
+</ResponseField>
+
+<ResponseField name="kits[].main_img_url" type="string">
+  URL to main kit image
+</ResponseField>
+
+<ResponseField name="kits[].team_name" type="string">
+  Team/club name
+</ResponseField>
+
+<ResponseField name="kits[].season_year" type="string">
+  Season year (e.g., "2024-25", "2023")
+</ResponseField>
+
+<ResponseField name="kits[].type_name" type="string">
+  Kit type name (e.g., "Home", "Away", "Third")
+</ResponseField>
+
+<ResponseField name="kits[].brand_name" type="string">
+  Brand name (e.g., "Adidas", "Nike")
+</ResponseField>
+
+<ResponseField name="kits[].colors_display" type="string">
+  Formatted color display string (e.g., "Red, White")
+</ResponseField>
+
+### Example Request
+
+<RequestExample>
+```bash cURL
+curl "http://localhost:8000/api/random-kits/?page=1&page_size=20"
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    'http://localhost:8000/api/random-kits/',
+    params={'page': 1, 'page_size': 20}
+)
+kits = response.json()
+```
+
+```javascript JavaScript
+const response = await fetch(
+  'http://localhost:8000/api/random-kits/?page=1&page_size=20'
+);
+const kits = await response.json();
+```
+</RequestExample>
+
+### Example Response
+
+<ResponseExample>
+```json
+[
+  {
+    "id": 123,
+    "name": "Arsenal 2024-25 Home Kit",
+    "slug": "arsenal-2024-25-home-kit",
+    "main_img_url": "https://www.footballkitarchive.com/images/kits/...",
+    "team_name": "Arsenal",
+    "season_year": "2024-25",
+    "type_name": "Home",
+    "brand_name": "Adidas",
+    "colors_display": "Red, White"
+  },
+  {
+    "id": 456,
+    "name": "Bayern Munich 2023-24 Away Kit",
+    "slug": "bayern-munich-2023-24-away-kit",
+    "main_img_url": "https://www.footballkitarchive.com/images/kits/...",
+    "team_name": "Bayern Munich",
+    "season_year": "2023-24",
+    "type_name": "Away",
+    "brand_name": "Adidas",
+    "colors_display": "Black, Gold"
+  }
+]
+```
+</ResponseExample>
+
+### Use Cases
+
+- Random kit discovery on homepage or explore pages
+- Kit browsing without specific search criteria
+- Generating varied kit collections for display
+
+<Note>
+Random selection is performed using database-level randomization for efficiency.
+</Note>
