@@ -1,0 +1,138 @@
+{
+  "projectType": "api-service",
+  "projectName": "FKApi",
+  "projectDescription": "Django REST API for football kit data with scraping, caching, and optional Celery support",
+  "theme": "sequoia",
+  "primaryColor": "#2D7A3E",
+  "lightColor": "#4CAF50",
+  "darkColor": "#1B5E20",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/data-models",
+              "concepts/scraping"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/setup",
+              "guides/celery",
+              "guides/docker",
+              "guides/caching",
+              "guides/monitoring"
+            ]
+          },
+          {
+            "group": "Management Commands",
+            "pages": [
+              "commands/overview",
+              "commands/scraping",
+              "commands/maintenance"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication",
+              "api/rate-limiting",
+              "api/pagination",
+              "api/errors"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/endpoints/clubs",
+              "api/endpoints/kits",
+              "api/endpoints/seasons",
+              "api/endpoints/brands",
+              "api/endpoints/competitions",
+              "api/endpoints/colors",
+              "api/endpoints/user-collections"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "api/search",
+              "api/bulk-operations",
+              "api/caching-strategy"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Contributing",
+            "pages": [
+              "development/contributing",
+              "development/testing",
+              "development/code-style"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "development/troubleshooting",
+              "development/changelog"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Django Ninja REST API with OpenAPI documentation",
+    "Web scraping with BeautifulSoup and cloudscraper",
+    "Redis caching with intelligent invalidation",
+    "Optional Celery for asynchronous tasks",
+    "Advanced fuzzy search with trigram matching",
+    "Rate limiting and API key authentication",
+    "Comprehensive data models for clubs, kits, seasons, brands",
+    "Prometheus metrics and Grafana dashboards",
+    "Docker and docker-compose deployment",
+    "PostgreSQL with full-text search extensions"
+  ],
+  "publicApiSurface": [
+    "GET /api/health - Health check endpoint",
+    "GET /api/clubs - List and search clubs",
+    "GET /api/clubs/{id} - Get club details",
+    "GET /api/clubs/{id}/seasons - Get club seasons",
+    "GET /api/kits - List and search kits",
+    "GET /api/kits/{id} - Get kit details",
+    "GET /api/kits/bulk - Bulk kit retrieval",
+    "GET /api/seasons - List and search seasons",
+    "GET /api/seasons/{id} - Get season details",
+    "GET /api/brands - List and search brands",
+    "GET /api/brands/bulk - Bulk brand retrieval",
+    "GET /api/competitions - List competitions",
+    "GET /api/competitions/bulk - Bulk competition retrieval",
+    "GET /api/colors - List colors",
+    "GET /api/user-collection/{userid} - Get user collection",
+    "POST /api/user-collection/{userid}/scrape - Trigger user collection scrape",
+    "GET /api/metrics - Get system metrics"
+  ]
+}
