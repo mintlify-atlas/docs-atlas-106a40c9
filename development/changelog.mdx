@@ -1,0 +1,202 @@
+---
+title: 'Changelog'
+description: 'Version history and changes for FKApi'
+---
+
+<Info>
+  All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+  and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+</Info>
+
+## Version 1.0.2 <sub>February 4, 2026</sub>
+
+### Added
+
+<AccordionGroup>
+  <Accordion title="Bulk Kits Endpoint">
+    **`GET /api/kits/bulk`** - New endpoint for retrieving multiple kits in a single request
+    - Accepts comma-separated slugs or full URLs
+    - Minimum 2 kits, maximum 30 kits per request
+    - Returns reduced schema for efficiency
+    - Preserves input order in response
+
+    ```bash
+    # Example usage
+    GET /api/kits/bulk?kits=arsenal-2024-home,chelsea-2024-away
+    ```
+  </Accordion>
+
+  <Accordion title="User Collection API">
+    **User Collection Endpoints** - Retrieve user kit collections from FootballKitArchive.com
+    - `GET /api/user-collection/{userid}` - Get user collection with pagination
+    - `POST /api/user-collection/{userid}/scrape` - Trigger collection scrape (cached 1 week or async via Celery)
+    - Scraper includes filtering (skips entries with custom_* fields)
+    - Proxy support for scraping
+    - Data enrichment with brands, clubs, and user info from `/api/user.php`
+  </Accordion>
+
+  <Accordion title="Additional Features">
+    - **IP Whitelist** - Rate limiting whitelist support via `.env` configuration
+    - **Management Command** - `clean_double_slash_urls` to fix double slashes in URL fields (Brand, Club, Competition, Kit)
+    - **HTML Sanitization** - Safe tag whitelist for documentation rendering to mitigate XSS
+    - **SonarCloud Badges** - Added to documentation README
+    - **Test Improvements** - Cache clearing in setUp/tearDown for better isolation; improved Celery mock handling
+  </Accordion>
+</AccordionGroup>
+
+### Changed
+
+- **Healthcheck Improvements** - Now uses `http.client.HTTPConnection` and accepts 200 or 301 status codes (fixes failure when `SECURE_SSL_REDIRECT` redirects to HTTPS)
+- **Environment Configuration** - `.env.example` and docker-compose updated for `DJANGO_SECRET_KEY`; Celery script errors written to stderr
+- **Cache Invalidation Refactor** - `cache_utils` refactored around a dictionary of model invalidators
+- **Scraper Enhancements**:
+  - HTML parser constant for consistency
+  - Season slug normalization
+  - ReDoS-safe slug parsing
+  - Reduced cognitive complexity across multiple functions
+- **API & Docs Views** - Refactored to reduce cognitive complexity; docs restricted to GET with sanitized output
+- **User Scraper** - `scrape_user` management command now uses the new user collection API scraper
+- **Documentation** - API documentation updated for bulk and user-collection endpoints (endpoint catalog, usage examples, Postman collection)
+
+### Removed
+
+- **Large Data File** - Removed `data.json` from repository
+- **Legacy Views and Routes** - Removed:
+  - Views: country-assignment, propagation, review, suggest-competition
+  - Routes: clubs-without-country, competition-clubs, random-kits/clubs, top-clubs-by-country
+  - Note: API and docs endpoints unchanged
+
+### Fixed
+
+- **Healthcheck** - No longer fails on production due to HTTPS redirect
+- **Test Reliability** - Fixed cache cross-contamination issues
+- **Celery Utils** - Better handling of mocks without `__name__` attribute
+- **Type_K Documentation** - Corrected translation of "jacket" from Spanish to English
+
+### Security
+
+<Warning>
+  Important security improvements in this release
+</Warning>
+
+- **Documentation Views** - Restricted to GET requests only; rendered HTML sanitized to prevent XSS
+- **HTTP Method Restrictions** - Added to assign_countries and suggest_competition_countries views
+
+---
+
+## Version 1.0.1 <sub>January 23, 2026</sub>
+
+### Added
+
+<AccordionGroup>
+  <Accordion title="Type_K Categorization System">
+    **Automatic Kit Type Categorization**
+    - New fields: `category`, `category_order`, `order_priority`, `is_goalkeeper`
+    - Management command `categorize_type_k` for bulk categorization
+    - Automatic categorization on kit creation during scraping
+    - Enhanced Django Admin interface with new categorization fields
+
+    Categories include: Home, Away, Third, Goalkeeper, Training, Pre-Match, Special, and more.
+  </Accordion>
+
+  <Accordion title="Enhanced Season Search">
+    **Priority-based Season Ordering**
+    - Improved search for 4-digit years (e.g., "2025" returns "2025", "2025-26", "2024-25" in correct order)
+    - Support for 2-digit year searches (e.g., "97" matches "1997", "1996-97")
+    - Uses `first_year` and `second_year` fields for accurate matching
+  </Accordion>
+
+  <Accordion title="Secondary Team Filtering">
+    **Smart Team Prioritization**
+    - Prioritizes primary teams over secondary teams (B, C, youth, women's teams)
+    - Detects: II, III, B, C, Jong, Youth, U17-U23, Ladies, Women, Femenino, Féminas, Féminine, Lads, Frauen
+  </Accordion>
+
+  <Accordion title="Season Management Commands">
+    - `delete_future_seasons` - Delete seasons with incorrect future years and save kit slugs
+    - `rescrape_from_file` - Rescrape kits from a JSON file containing slugs
+  </Accordion>
+</AccordionGroup>
+
+### Changed
+
+- **API Response** - Now includes Type_K categorization fields (`category`, `category_order`, `order_priority`, `is_goalkeeper`)
+- **Kit Search** - Orders results by Type_K category and priority
+- **Season Search** - Uses priority-based ordering for better relevance
+- **Error Handling** - Improved validation across the API
+
+### Fixed
+
+- **Season Search** - Ordering now prioritizes exact matches and relevant results
+- **Type_K Categorization** - Logic correctly distinguishes "training" from "jacket" types
+- **Unicode Encoding** - Fixed issues in management commands for Windows compatibility
+
+### Security
+
+Security improvements from previous releases (headers, validation, etc.)
+
+### Testing
+
+- Comprehensive tests for Type_K categorization
+- Tests for season search priority ordering
+- Tests for secondary team filtering
+
+---
+
+## Version 1.0.0 <sub>Initial Release</sub>
+
+### Initial Release
+
+<CardGroup cols={2}>
+  <Card title="Core API" icon="server">
+    Full REST API functionality with Django Ninja
+  </Card>
+  <Card title="Data Models" icon="database">
+    Kit, Club, Season, Brand, Competition models
+  </Card>
+  <Card title="Search & Filter" icon="magnifying-glass">
+    Comprehensive search and filtering capabilities
+  </Card>
+  <Card title="Web Scraping" icon="spider">
+    Ethical web scraping integration
+  </Card>
+  <Card title="Redis Caching" icon="bolt">
+    Performance optimization with Redis
+  </Card>
+  <Card title="Celery Support" icon="clock">
+    Optional async task processing
+  </Card>
+  <Card title="Documentation" icon="book">
+    Complete API documentation
+  </Card>
+  <Card title="Admin Interface" icon="shield">
+    Django admin for data management
+  </Card>
+</CardGroup>
+
+### Core Features
+
+- **RESTful API** - Clean, intuitive API design
+- **Database Models** - Well-structured relational database schema
+- **Search Functionality** - Powerful search across kits, clubs, and more
+- **Web Scraping** - Automated data collection with rate limiting
+- **Caching Layer** - Redis-based caching for performance
+- **Async Tasks** - Optional Celery integration for background jobs
+- **API Documentation** - Interactive API docs with Django Ninja
+- **Admin Interface** - Django admin for data management
+- **Testing Suite** - Comprehensive test coverage
+- **Docker Support** - Containerized deployment
+
+---
+
+## Release Links
+
+- [v1.0.2](https://github.com/sunr4y/fkapi/compare/v1.0.1...v1.0.2) - February 4, 2026
+- [v1.0.1](https://github.com/sunr4y/fkapi/compare/v1.0.0...v1.0.1) - January 23, 2026
+- [v1.0.0](https://github.com/sunr4y/fkapi/releases/tag/v1.0.0) - Initial Release
+
+---
+
+<Note>
+  For detailed commit history, see the [GitHub repository](https://github.com/sunr4y/fkapi).
+</Note>

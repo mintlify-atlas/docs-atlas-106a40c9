@@ -1,0 +1,665 @@
+---
+title: Docker Deployment
+description: Deploy FKApi using Docker and docker-compose
+---
+
+This guide covers deploying FKApi using Docker containers for simplified setup and deployment. Docker provides a consistent environment across development and production.
+
+## Overview
+
+FKApi includes a complete Docker setup with:
+
+- **Multi-stage Dockerfile** for optimized images
+- **docker-compose.yml** with all services
+- **Service profiles** for flexible deployments
+- **Health checks** for all containers
+- **Volume management** for data persistence
+
+## Prerequisites
+
+Before you begin, install:
+
+- Docker 20.10 or higher
+- Docker Compose V2 or higher
+- Git
+
+<Tabs>
+  <Tab title="Linux">
+    ```bash
+    # Install Docker
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    
+    # Install Docker Compose
+    sudo apt-get update
+    sudo apt-get install docker-compose-plugin
+    
+    # Add user to docker group
+    sudo usermod -aG docker $USER
+    newgrp docker
+    
+    # Verify installation
+    docker --version
+    docker compose version
+    ```
+  </Tab>
+  
+  <Tab title="macOS">
+    ```bash
+    # Install Docker Desktop
+    # Download from: https://www.docker.com/products/docker-desktop
+    
+    # Or using Homebrew
+    brew install --cask docker
+    
+    # Start Docker Desktop and verify
+    docker --version
+    docker compose version
+    ```
+  </Tab>
+  
+  <Tab title="Windows">
+    1. Install Docker Desktop from https://www.docker.com/products/docker-desktop
+    2. Enable WSL 2 backend during installation
+    3. Restart your computer
+    4. Verify in PowerShell:
+    
+    ```powershell
+    docker --version
+    docker compose version
+    ```
+  </Tab>
+</Tabs>
+
+## Quick Start
+
+<Steps>
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/your-username/fkapi.git
+cd fkapi
+```
+
+### Configure Environment
+
+Create a `.env` file with your configuration:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` for your environment:
+
+```bash
+# Django Settings
+DJANGO_SECRET_KEY=your-secret-key-here
+DJANGO_DEBUG=False
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,yourdomain.com
+DJANGO_PORT=8000
+
+# PostgreSQL
+POSTGRES_DB=fkapi
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=secure_password
+POSTGRES_PORT=5432
+
+# Redis
+REDIS_PORT=6379
+
+# Celery
+ENABLE_CELERY=True
+
+# Flower
+FLOWER_PORT=5555
+
+# Monitoring (optional)
+PROMETHEUS_PORT=9090
+```
+
+### Build and Start Services
+
+```bash
+# Build images
+docker compose build
+
+# Start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f
+```
+
+### Run Migrations
+
+```bash
+# Run database migrations
+docker compose exec web python manage.py migrate
+
+# Create superuser
+docker compose exec web python manage.py createsuperuser
+```
+
+### Access the Application
+
+The services are now available:
+
+- **API**: http://localhost:8000/api/
+- **Admin**: http://localhost:8000/admin/
+- **Flower**: http://localhost:5555
+
+</Steps>
+
+## Docker Architecture
+
+### Dockerfile
+
+FKApi uses a multi-stage build for optimization:
+
+```dockerfile
+FROM python:3.10.6-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Final stage
+FROM python:3.10.6-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages from builder
+COPY --from=builder /root/.local /root/.local
+
+# Copy application code
+COPY . .
+
+# Set environment
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PATH=/root/.local/bin:$PATH
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import http.client; conn = http.client.HTTPConnection('127.0.0.1', 8000, timeout=5); conn.request('GET', '/api/health'); resp = conn.getresponse(); exit(0 if resp.status in (200, 301) else 1)" || exit 1
+
+# Run application
+CMD ["sh", "-c", "if [ \"$DJANGO_DEBUG\" = \"True\" ]; then python manage.py runserver 0.0.0.0:8000; else gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 fkapi.wsgi:application; fi"]
+```
+
+Key features:
+- **Multi-stage build**: Reduces final image size
+- **Layer caching**: Faster rebuilds
+- **Health checks**: Automatic container monitoring
+- **Dynamic command**: Development vs production mode
+
+### Services
+
+The `docker-compose.yml` defines these services:
+
+#### Core Services (Always Active)
+
+**Database (db)**
+```yaml
+db:
+  image: postgres:15
+  environment:
+    POSTGRES_DB: ${POSTGRES_DB:-fkapi}
+    POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  volumes:
+    - postgres_data:/var/lib/postgresql/data
+  ports:
+    - "${POSTGRES_PORT:-5432}:5432"
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+```
+
+**Redis (redis)**
+```yaml
+redis:
+  image: redis:7-alpine
+  command: redis-server --bind 0.0.0.0 --port 6379
+  ports:
+    - "${REDIS_PORT:-6379}:6379"
+  volumes:
+    - redis_data:/data
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+```
+
+**Web Application (web)**
+```yaml
+web:
+  build: .
+  command: sh -c "if [ \"$DJANGO_DEBUG\" = \"True\" ]; then python manage.py runserver 0.0.0.0:${DJANGO_PORT:-8000}; else gunicorn --bind 0.0.0.0:${DJANGO_PORT:-8000} --workers 4 --timeout 120 fkapi.wsgi:application; fi"
+  volumes:
+    - .:/app
+  ports:
+    - "${DJANGO_PORT:-8000}:8000"
+  environment:
+    - POSTGRES_DB=${POSTGRES_DB:-fkapi}
+    - POSTGRES_USER=${POSTGRES_USER:-postgres}
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+    - POSTGRES_HOST=db
+    - POSTGRES_PORT=5432
+    - REDIS_URL=redis://redis:6379/1
+    - CELERY_BROKER_URL=redis://redis:6379/0
+    - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    - ENABLE_CELERY=${ENABLE_CELERY:-True}
+    - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-}
+    - DJANGO_DEBUG=${DJANGO_DEBUG:-True}
+    - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+```
+
+**Celery Worker (celery)**
+```yaml
+celery:
+  build: .
+  command: celery -A fkapi worker --loglevel=info --pool=threads --concurrency=4
+  volumes:
+    - .:/app
+  environment:
+    # Same as web service
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+```
+
+**Celery Beat (celerybeat)**
+```yaml
+celerybeat:
+  build: .
+  command: celery -A fkapi beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+  volumes:
+    - .:/app
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+```
+
+**Flower (flower)**
+```yaml
+flower:
+  build: .
+  command: celery -A fkapi flower --port=5555
+  ports:
+    - "${FLOWER_PORT:-5555}:5555"
+  environment:
+    - CELERY_BROKER_URL=redis://redis:6379/0
+    - CELERY_RESULT_BACKEND=redis://redis:6379/0
+  depends_on:
+    redis:
+      condition: service_healthy
+    celery:
+      condition: service_started
+```
+
+#### Monitoring Services (Optional)
+
+Monitoring services use the `monitoring` profile:
+
+**Prometheus (prometheus)**
+```yaml
+prometheus:
+  image: prom/prometheus:latest
+  profiles:
+    - monitoring
+  volumes:
+    - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    - prometheus_data:/prometheus
+  command:
+    - '--config.file=/etc/prometheus/prometheus.yml'
+    - '--storage.tsdb.path=/prometheus'
+  ports:
+    - "${PROMETHEUS_PORT:-9090}:9090"
+  depends_on:
+    - web
+    - redis
+```
+
+## Service Profiles
+
+FKApi uses Docker Compose profiles for flexible deployments:
+
+### Default Profile (Minimal Setup)
+
+Start only core services:
+
+```bash
+docker compose up -d
+```
+
+Includes:
+- PostgreSQL database
+- Redis cache
+- Django web application
+- Celery worker
+- Celery beat
+- Flower
+
+### Monitoring Profile
+
+Add monitoring stack:
+
+```bash
+docker compose --profile monitoring up -d
+```
+
+Adds:
+- Prometheus (metrics collection)
+- Redis Exporter (Redis metrics)
+- PostgreSQL Exporter (database metrics)
+
+See the [Monitoring guide](/guides/monitoring) for setup details.
+
+## Common Operations
+
+### Viewing Logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f web
+docker compose logs -f celery
+docker compose logs -f db
+
+# Last 100 lines
+docker compose logs --tail=100 web
+```
+
+### Restarting Services
+
+```bash
+# Restart all services
+docker compose restart
+
+# Restart specific service
+docker compose restart web
+docker compose restart celery
+
+# Stop all services
+docker compose stop
+
+# Start stopped services
+docker compose start
+```
+
+### Rebuilding Images
+
+```bash
+# Rebuild all images
+docker compose build
+
+# Rebuild specific service
+docker compose build web
+
+# Rebuild without cache
+docker compose build --no-cache
+
+# Rebuild and restart
+docker compose up -d --build
+```
+
+### Running Commands
+
+```bash
+# Django management commands
+docker compose exec web python manage.py migrate
+docker compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py collectstatic
+
+# Shell access
+docker compose exec web bash
+docker compose exec web python manage.py shell
+
+# Database access
+docker compose exec db psql -U postgres -d fkapi
+
+# Redis CLI
+docker compose exec redis redis-cli
+```
+
+### Managing Data
+
+```bash
+# Backup database
+docker compose exec db pg_dump -U postgres fkapi > backup.sql
+
+# Restore database
+docker compose exec -T db psql -U postgres fkapi < backup.sql
+
+# List volumes
+docker volume ls
+
+# Remove volumes (data will be lost!)
+docker compose down -v
+```
+
+## Production Deployment
+
+### Security Hardening
+
+For production, update your `.env`:
+
+```bash
+# Generate a strong secret key
+DJANGO_SECRET_KEY=$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
+
+# Disable debug mode
+DJANGO_DEBUG=False
+
+# Set allowed hosts
+DJANGO_ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
+
+# Strong database password
+POSTGRES_PASSWORD=$(openssl rand -base64 32)
+
+# Enable authentication
+DJANGO_API_ENABLE_AUTH=True
+```
+
+### Using Docker Secrets
+
+For sensitive data, use Docker secrets:
+
+```yaml
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  django_secret:
+    file: ./secrets/django_secret.txt
+
+services:
+  web:
+    secrets:
+      - db_password
+      - django_secret
+    environment:
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+      - DJANGO_SECRET_KEY_FILE=/run/secrets/django_secret
+```
+
+### Resource Limits
+
+Set resource limits for production:
+
+```yaml
+services:
+  web:
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+```
+
+### Health Checks
+
+All services include health checks. Monitor with:
+
+```bash
+# Check service health
+docker compose ps
+
+# Detailed health status
+docker inspect --format='{{.State.Health.Status}}' fkapi-web-1
+```
+
+## Troubleshooting
+
+### Container Fails to Start
+
+**Check logs**:
+```bash
+docker compose logs web
+```
+
+**Common causes**:
+- Environment variable errors
+- Database not ready (increase start_period in health check)
+- Port conflicts
+- Permission issues
+
+### Database Connection Errors
+
+**Verify database is running**:
+```bash
+docker compose ps db
+docker compose exec db pg_isready -U postgres
+```
+
+**Check connection from web**:
+```bash
+docker compose exec web python manage.py dbshell
+```
+
+### Redis Connection Errors
+
+**Test Redis connection**:
+```bash
+docker compose exec redis redis-cli ping
+# Should return: PONG
+```
+
+**Check from web container**:
+```bash
+docker compose exec web python -c "import redis; r=redis.Redis(host='redis', port=6379); print(r.ping())"
+```
+
+### Port Already in Use
+
+**Change ports in `.env`**:
+```bash
+DJANGO_PORT=8001
+POSTGRES_PORT=5433
+REDIS_PORT=6380
+```
+
+Or stop conflicting services:
+```bash
+# Find process using port
+sudo lsof -i :8000
+
+# Kill process
+sudo kill -9 <PID>
+```
+
+### Out of Disk Space
+
+**Clean up Docker**:
+```bash
+# Remove unused containers
+docker container prune
+
+# Remove unused images
+docker image prune -a
+
+# Remove unused volumes
+docker volume prune
+
+# Remove everything
+docker system prune -a --volumes
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Environment Variables">
+    - Never commit `.env` files
+    - Use `.env.example` as template
+    - Use Docker secrets for production
+    - Document all variables
+    - Validate required variables on startup
+  </Accordion>
+  
+  <Accordion title="Data Persistence">
+    - Use named volumes for data
+    - Regular database backups
+    - Test restore procedures
+    - Monitor disk usage
+    - Implement backup rotation
+  </Accordion>
+  
+  <Accordion title="Networking">
+    - Use Docker networks for service isolation
+    - Expose only necessary ports
+    - Use reverse proxy (nginx) for production
+    - Enable HTTPS/TLS
+    - Implement rate limiting
+  </Accordion>
+  
+  <Accordion title="Logging">
+    - Configure log rotation
+    - Use centralized logging
+    - Monitor log volume
+    - Set appropriate log levels
+    - Parse logs for errors
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Caching Strategy" icon="database" href="/guides/caching">
+    Optimize performance with Redis caching
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/guides/monitoring">
+    Set up Prometheus and Grafana
+  </Card>
+</CardGroup>

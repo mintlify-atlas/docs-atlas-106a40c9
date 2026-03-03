@@ -1,0 +1,768 @@
+---
+title: Error Handling
+description: API error response format, HTTP status codes, and error handling strategies
+---
+
+## Overview
+
+The Football Kit Archive API uses standard HTTP status codes and returns consistent error responses in JSON format. All errors include a `detail` field with a human-readable error message.
+
+## Error Response Format
+
+All error responses follow this structure:
+
+```json
+{
+  "detail": "Error message description"
+}
+```
+
+From `fkapi/api.py:178-183`:
+
+```python
+## Error Responses
+The API uses standard HTTP status codes:
+- `200 OK`: Successful request
+- `400 Bad Request`: Invalid request parameters
+- `401 Unauthorized`: Missing or invalid API key (if authentication enabled)
+- `403 Forbidden`: Rate limit exceeded
+- `404 Not Found`: Resource not found
+- `500 Internal Server Error`: Server error
+
+Error responses follow this format:
+```json
+{
+    "detail": "Error message description"
+}
+```
+
+## HTTP Status Codes
+
+### 200 OK
+
+Request succeeded. Returns the requested resource(s).
+
+```bash
+curl http://localhost:8000/api/kits/1
+```
+
+**Response:**
+```json
+{
+  "id": 1,
+  "name": "Barcelona Home 2024-25",
+  "slug": "barcelona-home-2024-25",
+  "team": {...},
+  "season": {...}
+}
+```
+
+### 400 Bad Request
+
+Invalid request parameters or validation errors.
+
+#### Invalid Parameters
+
+```bash
+curl "http://localhost:8000/api/kits?page=invalid"
+```
+
+**Response:**
+```json
+{
+  "detail": "Invalid request parameters"
+}
+```
+
+#### Invalid Color
+
+From `fkapi/api.py:834-836`:
+
+```python
+if primary_color not in AVAILABLE_COLORS:
+    raise ValidationError(
+        f"Invalid primary_color '{primary_color}'. Available options: {', '.join(AVAILABLE_COLORS)}"
+    )
+```
+
+```bash
+curl "http://localhost:8000/api/kits?primary_color=InvalidColor"
+```
+
+**Response:**
+```json
+{
+  "detail": "Invalid primary_color 'InvalidColor'. Available options: White, Red, Blue, Black, Yellow, Green, Sky blue, Navy, Orange, Gray, Claret, Purple, Pink, Brown, Gold, Silver, Off-white"
+}
+```
+
+#### Invalid Design
+
+From `fkapi/api.py:858-861`:
+
+```python
+design_normalized = design.strip()
+if design_normalized not in AVAILABLE_DESIGNS:
+    raise ValidationError(f"Invalid design '{design}'. Available options: {', '.join(AVAILABLE_DESIGNS)}")
+```
+
+```bash
+curl "http://localhost:8000/api/kits?design=InvalidDesign"
+```
+
+**Response:**
+```json
+{
+  "detail": "Invalid design 'InvalidDesign'. Available options: Plain, Stripes, Graphic, Chest band, Contrasting sleeves, Pinstripes, Hoops, Single stripe, Half-and-half, Sash, Chevron, Checkers, Gradient, Diagonal, Cross, Quarters"
+}
+```
+
+#### Invalid Season
+
+From `core/exceptions.py:57-70`:
+
+```python
+class InvalidSeasonError(ScrapingError):
+    """Raised when a season format is invalid or cannot be parsed."""
+```
+
+```bash
+curl "http://localhost:8000/api/seasons?id=invalid-season"
+```
+
+**Response:**
+```json
+{
+  "detail": "Invalid season format: invalid-season"
+}
+```
+
+#### Bulk Kit Errors
+
+From `fkapi/api.py:1358-1361`:
+
+```python
+if len(slug_list) < 2:
+    raise ValidationError("Minimum 2 kits required")
+if len(slug_list) > 30:
+    raise ValidationError("Maximum 30 kits allowed")
+```
+
+```bash
+# Too few kits
+curl "http://localhost:8000/api/kits/bulk?slugs=kit-1"
+
+# Too many kits
+curl "http://localhost:8000/api/kits/bulk?slugs=kit-1,kit-2,...,kit-31"
+```
+
+**Response:**
+```json
+{
+  "detail": "Minimum 2 kits required"
+}
+```
+
+or
+
+```json
+{
+  "detail": "Maximum 30 kits allowed"
+}
+```
+
+### 401 Unauthorized
+
+Missing or invalid API key (only when authentication is enabled).
+
+```bash
+curl http://localhost:8000/api/kits/1
+```
+
+**Response:**
+```json
+{
+  "detail": "Missing or invalid API key"
+}
+```
+
+**Solution:** Include a valid API key in the request header:
+
+```bash
+curl -H "X-API-Key: your-api-key-here" \
+  http://localhost:8000/api/kits/1
+```
+
+### 403 Forbidden
+
+Rate limit exceeded.
+
+From `core/middleware.py:70-71`:
+
+```python
+if request_data["count"] >= max_requests:
+    return HttpResponseForbidden("Rate limit exceeded. Please try again later.")
+```
+
+```bash
+# After exceeding 100 requests per hour
+curl http://localhost:8000/api/kits/1
+```
+
+**Response:**
+```json
+{
+  "detail": "Rate limit exceeded. Please try again later."
+}
+```
+
+**Solution:** Wait until the rate limit window resets (1 hour) or implement exponential backoff:
+
+```python
+import time
+import requests
+
+def make_request_with_retry(url, max_retries=3):
+    for attempt in range(max_retries):
+        response = requests.get(url)
+        
+        if response.status_code == 403:
+            wait_time = 2 ** attempt  # 1s, 2s, 4s
+            time.sleep(wait_time)
+            continue
+        
+        return response
+    
+    raise Exception("Max retries exceeded")
+```
+
+### 404 Not Found
+
+Requested resource does not exist.
+
+#### Kit Not Found
+
+From `core/exceptions.py:25-38`:
+
+```python
+class KitNotFoundError(ScrapingError):
+    """Raised when a kit is not found on the source."""
+    
+    def __init__(self, slug: str, message: str | None = None):
+        if message is None:
+            message = f"Kit not found: {slug}"
+        super().__init__(message, slug)
+```
+
+Error handler from `fkapi/api.py:236-250`:
+
+```python
+@api.exception_handler(ScrapingError)
+def scraping_error_handler(request: HttpRequest, exc: ScrapingError) -> Any:
+    if isinstance(exc, KitNotFoundError):
+        return api.create_response(request, {"detail": str(exc)}, status=404)
+    elif isinstance(exc, ClubNotFoundError):
+        return api.create_response(request, {"detail": str(exc)}, status=404)
+```
+
+```bash
+curl http://localhost:8000/api/kits/99999
+```
+
+**Response:**
+```json
+{
+  "detail": "Kit with ID 99999 not found"
+}
+```
+
+#### Club Not Found
+
+From `core/exceptions.py:41-54`:
+
+```python
+class ClubNotFoundError(ScrapingError):
+    """Raised when a club is not found on the source."""
+    
+    def __init__(self, slug: str, message: str | None = None):
+        if message is None:
+            message = f"Club not found: {slug}"
+        super().__init__(message, slug)
+```
+
+```bash
+curl http://localhost:8000/api/clubs/99999/kits
+```
+
+**Response:**
+```json
+{
+  "detail": "Club with ID 99999 not found"
+}
+```
+
+### 500 Internal Server Error
+
+Unexpected server error.
+
+From `fkapi/api.py:253-264`:
+
+```python
+@api.exception_handler(Exception)
+def custom_exception_handler(request: HttpRequest, exc: Exception) -> Any:
+    logger = logging.getLogger(__name__)
+    logger.error(f"Unhandled exception: {type(exc).__name__}", exc_info=True)
+
+    if settings.DEBUG:
+        detail = str(exc)
+    else:
+        detail = "An internal server error occurred. Please try again later."
+
+    return api.create_response(request, {"detail": detail}, status=500)
+```
+
+**Production Response:**
+```json
+{
+  "detail": "An internal server error occurred. Please try again later."
+}
+```
+
+**Development Response (DEBUG=True):**
+```json
+{
+  "detail": "Detailed error message with stack trace"
+}
+```
+
+### 503 Service Unavailable
+
+Database or cache connection failed.
+
+From `fkapi/api.py:301-308`:
+
+```python
+try:
+    Club.objects.count()
+    health_status["database"] = "connected"
+except Exception as e:
+    health_status["status"] = "unhealthy"
+    health_status["database"] = "disconnected"
+    health_status["error"] = str(e)
+    return api.create_response(request, health_status, status=503)
+```
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+**Response:**
+```json
+{
+  "status": "unhealthy",
+  "timestamp": "2026-03-03T12:00:00Z",
+  "database": "disconnected",
+  "error": "Connection refused"
+}
+```
+
+## Exception Classes
+
+From `core/exceptions.py`:
+
+### ScrapingError (Base Exception)
+
+```python
+class ScrapingError(Exception):
+    """Base exception for scraping-related errors."""
+    
+    def __init__(self, message: str, slug: str | None = None):
+        self.message = message
+        self.slug = slug
+        super().__init__(self.message)
+```
+
+### KitNotFoundError
+
+```python
+class KitNotFoundError(ScrapingError):
+    """Raised when a kit is not found on the source."""
+```
+
+**Status Code:** `404`
+
+### ClubNotFoundError
+
+```python
+class ClubNotFoundError(ScrapingError):
+    """Raised when a club is not found on the source."""
+```
+
+**Status Code:** `404`
+
+### InvalidSeasonError
+
+```python
+class InvalidSeasonError(ScrapingError):
+    """Raised when a season format is invalid or cannot be parsed."""
+```
+
+**Status Code:** `400`
+
+### RateLimitExceededError
+
+```python
+class RateLimitExceededError(ScrapingError):
+    """Raised when the rate limit for API requests is exceeded."""
+    
+    def __init__(self, message: str | None = None):
+        if message is None:
+            message = "Rate limit exceeded. Please try again later."
+        super().__init__(message, None)
+```
+
+**Status Code:** `403`
+
+### ValidationError
+
+```python
+class ValidationError(ScrapingError):
+    """Raised when API request validation fails."""
+    
+    def __init__(self, message: str | None = None):
+        if message is None:
+            message = "Invalid request parameters"
+        super().__init__(message, None)
+```
+
+**Status Code:** `400`
+
+## Error Handling Examples
+
+### Python
+
+```python
+import requests
+from typing import Optional
+
+class APIError(Exception):
+    """Base API error."""
+    pass
+
+class NotFoundError(APIError):
+    """Resource not found (404)."""
+    pass
+
+class ValidationError(APIError):
+    """Invalid request (400)."""
+    pass
+
+class RateLimitError(APIError):
+    """Rate limit exceeded (403)."""
+    pass
+
+class ServerError(APIError):
+    """Server error (500)."""
+    pass
+
+class FootballKitAPI:
+    def __init__(self, base_url: str, api_key: Optional[str] = None):
+        self.base_url = base_url
+        self.headers = {}
+        if api_key:
+            self.headers['X-API-Key'] = api_key
+    
+    def _handle_response(self, response: requests.Response):
+        """Handle API response and raise appropriate errors."""
+        if response.status_code == 200:
+            return response.json()
+        
+        try:
+            error_data = response.json()
+            error_message = error_data.get('detail', 'Unknown error')
+        except:
+            error_message = response.text
+        
+        if response.status_code == 400:
+            raise ValidationError(error_message)
+        elif response.status_code == 401:
+            raise APIError(f"Authentication failed: {error_message}")
+        elif response.status_code == 403:
+            raise RateLimitError(error_message)
+        elif response.status_code == 404:
+            raise NotFoundError(error_message)
+        elif response.status_code >= 500:
+            raise ServerError(error_message)
+        else:
+            raise APIError(f"HTTP {response.status_code}: {error_message}")
+    
+    def get_kit(self, kit_id: int):
+        """Get kit by ID."""
+        response = requests.get(
+            f"{self.base_url}/kits/{kit_id}",
+            headers=self.headers
+        )
+        return self._handle_response(response)
+    
+    def search_kits(self, keyword: str):
+        """Search kits by keyword."""
+        response = requests.get(
+            f"{self.base_url}/kits/search",
+            params={'keyword': keyword},
+            headers=self.headers
+        )
+        return self._handle_response(response)
+
+# Usage
+api = FootballKitAPI('http://localhost:8000/api')
+
+try:
+    kit = api.get_kit(1)
+    print(f"Found kit: {kit['name']}")
+except NotFoundError as e:
+    print(f"Kit not found: {e}")
+except ValidationError as e:
+    print(f"Invalid request: {e}")
+except RateLimitError as e:
+    print(f"Rate limited: {e}")
+    # Wait and retry
+except ServerError as e:
+    print(f"Server error: {e}")
+    # Log and alert
+except APIError as e:
+    print(f"API error: {e}")
+```
+
+### JavaScript
+
+```javascript
+class APIError extends Error {
+  constructor(message, statusCode) {
+    super(message);
+    this.statusCode = statusCode;
+    this.name = 'APIError';
+  }
+}
+
+class NotFoundError extends APIError {
+  constructor(message) {
+    super(message, 404);
+    this.name = 'NotFoundError';
+  }
+}
+
+class ValidationError extends APIError {
+  constructor(message) {
+    super(message, 400);
+    this.name = 'ValidationError';
+  }
+}
+
+class RateLimitError extends APIError {
+  constructor(message) {
+    super(message, 403);
+    this.name = 'RateLimitError';
+  }
+}
+
+class ServerError extends APIError {
+  constructor(message) {
+    super(message, 500);
+    this.name = 'ServerError';
+  }
+}
+
+class FootballKitAPI {
+  constructor(baseUrl, apiKey = null) {
+    this.baseUrl = baseUrl;
+    this.headers = {};
+    if (apiKey) {
+      this.headers['X-API-Key'] = apiKey;
+    }
+  }
+
+  async _handleResponse(response) {
+    if (response.ok) {
+      return await response.json();
+    }
+
+    let errorMessage;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.detail || 'Unknown error';
+    } catch {
+      errorMessage = await response.text();
+    }
+
+    switch (response.status) {
+      case 400:
+        throw new ValidationError(errorMessage);
+      case 401:
+        throw new APIError(`Authentication failed: ${errorMessage}`, 401);
+      case 403:
+        throw new RateLimitError(errorMessage);
+      case 404:
+        throw new NotFoundError(errorMessage);
+      case 500:
+      case 503:
+        throw new ServerError(errorMessage);
+      default:
+        throw new APIError(`HTTP ${response.status}: ${errorMessage}`, response.status);
+    }
+  }
+
+  async getKit(kitId) {
+    const response = await fetch(`${this.baseUrl}/kits/${kitId}`, {
+      headers: this.headers
+    });
+    return this._handleResponse(response);
+  }
+
+  async searchKits(keyword) {
+    const params = new URLSearchParams({ keyword });
+    const response = await fetch(`${this.baseUrl}/kits/search?${params}`, {
+      headers: this.headers
+    });
+    return this._handleResponse(response);
+  }
+}
+
+// Usage
+const api = new FootballKitAPI('http://localhost:8000/api');
+
+try {
+  const kit = await api.getKit(1);
+  console.log(`Found kit: ${kit.name}`);
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.log(`Kit not found: ${error.message}`);
+  } else if (error instanceof ValidationError) {
+    console.log(`Invalid request: ${error.message}`);
+  } else if (error instanceof RateLimitError) {
+    console.log(`Rate limited: ${error.message}`);
+    // Wait and retry
+  } else if (error instanceof ServerError) {
+    console.log(`Server error: ${error.message}`);
+    // Log and alert
+  } else {
+    console.log(`API error: ${error.message}`);
+  }
+}
+```
+
+## Best Practices
+
+### 1. Always Check Status Codes
+
+```python
+response = requests.get(url)
+if response.status_code != 200:
+    # Handle error
+    print(f"Error: {response.json().get('detail')}")
+```
+
+### 2. Implement Retry Logic
+
+```python
+import time
+
+def make_request_with_retry(url, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(2 ** attempt)  # Exponential backoff
+```
+
+### 3. Handle Rate Limits Gracefully
+
+```python
+if response.status_code == 403:
+    error = response.json()
+    if 'rate limit' in error.get('detail', '').lower():
+        # Wait 60 seconds before retrying
+        time.sleep(60)
+        return make_request_with_retry(url)
+```
+
+### 4. Log Errors
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    kit = api.get_kit(1)
+except APIError as e:
+    logger.error(f"API error: {e}", exc_info=True)
+    # Handle error
+```
+
+### 5. Provide User-Friendly Messages
+
+```python
+try:
+    kit = api.get_kit(kit_id)
+except NotFoundError:
+    print(f"Sorry, kit {kit_id} doesn't exist.")
+except ValidationError as e:
+    print(f"Invalid input: {e}")
+except RateLimitError:
+    print("Too many requests. Please try again in a few minutes.")
+except ServerError:
+    print("Server is experiencing issues. Please try again later.")
+```
+
+## Debugging Errors
+
+### Enable Debug Mode
+
+In development, set `DEBUG=True` to get detailed error messages:
+
+```python
+# settings.py
+DEBUG = True
+```
+
+This will include stack traces in 500 error responses.
+
+### Check Server Logs
+
+```bash
+# Django development server
+python manage.py runserver
+
+# Production logs
+tail -f /var/log/fkapi/error.log
+```
+
+### Test Error Handling
+
+```bash
+# Test 404
+curl http://localhost:8000/api/kits/99999
+
+# Test 400
+curl "http://localhost:8000/api/kits?primary_color=InvalidColor"
+
+# Test 403 (after 100 requests)
+for i in {1..101}; do
+  curl http://localhost:8000/api/health
+done
+```
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Rate Limiting" icon="gauge" href="/api/rate-limiting">
+    Learn about rate limits and 403 errors
+  </Card>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Understand 401 authentication errors
+  </Card>
+</CardGroup>

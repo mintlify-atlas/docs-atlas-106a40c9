@@ -1,0 +1,178 @@
+---
+title: Scraping Commands
+description: Django management commands for scraping football kit data
+---
+
+FKApi provides several management commands to scrape football kit data from FootballKitArchive and other sources.
+
+## scrape_latest
+
+Scrapes the latest kits from multiple pages on FootballKitArchive.
+
+### Usage
+
+```bash
+python manage.py scrape_latest [options]
+```
+
+### Options
+
+- `--start-page` - Page number to start scraping from (default: 1)
+- `--end-page` - Page number to end scraping at (default: 300)
+- `--workers` - Number of worker threads (default: 4)
+- `--delay` - Delay in seconds between pages (default: 2)
+
+### Examples
+
+Scrape pages 1-100 with default settings:
+
+```bash
+python manage.py scrape_latest --start-page 1 --end-page 100
+```
+
+Scrape backward from page 1000 to page 1 with 8 workers:
+
+```bash
+python manage.py scrape_latest --start-page 1000 --end-page 1 --workers 8
+```
+
+Scrape with custom delay to avoid rate limiting:
+
+```bash
+python manage.py scrape_latest --start-page 1 --end-page 50 --delay 5
+```
+
+### Notes
+
+- Supports bidirectional scraping (forward and backward)
+- Uses proxy when scraping to avoid IP blocks
+- Displays progress information including success/failure counts
+- Kits within each page are processed in parallel for efficiency
+
+## scrape_club_details
+
+Scrapes club logos and details for clubs that are missing logo data.
+
+### Usage
+
+```bash
+python manage.py scrape_club_details
+```
+
+### Notes
+
+- Automatically finds clubs with missing logos (`logo__isnull=True`)
+- Uses 15 concurrent workers for parallel processing
+- Uses proxy to avoid rate limiting
+
+## scrape_kit_by_slug
+
+Scrapes a specific kit by its slug identifier.
+
+### Usage
+
+```bash
+python manage.py scrape_kit_by_slug <slug> [options]
+```
+
+### Arguments
+
+- `slug` - The slug of the kit to scrape (required)
+
+### Options
+
+- `--force` - Force rescraping even if the kit already exists and use proxy
+
+### Examples
+
+Scrape a specific kit:
+
+```bash
+python manage.py scrape_kit_by_slug barcelona-2023-24-home-kit
+```
+
+Force update an existing kit:
+
+```bash
+python manage.py scrape_kit_by_slug barcelona-2023-24-home-kit --force
+```
+
+### Notes
+
+- Checks if kit already exists before scraping (unless `--force` is used)
+- Uses proxy when `--force` flag is provided
+- Displays success or error messages with details
+
+## scrape_whole_club
+
+Scrapes all kits for all clubs in the database.
+
+### Usage
+
+```bash
+python manage.py scrape_whole_club
+```
+
+### Notes
+
+- Processes all clubs in the database
+- Uses 25 concurrent workers for maximum throughput
+- May take considerable time depending on number of clubs
+
+## scrape_brand
+
+Scrapes brand logos and details for brands missing logo data.
+
+### Usage
+
+```bash
+python manage.py scrape_brand
+```
+
+### Notes
+
+- Automatically finds brands with missing logos (`logo__isnull=True`)
+- Uses 15 concurrent workers for parallel processing
+- Orders brands by name (descending)
+- Handles errors gracefully and continues with remaining brands
+- Automatically constructs brand slugs using the BRAND_SLUG_SUFFIX constant
+
+## scrape_user
+
+Scrapes a user's collection from FootballKitArchive using their user ID.
+
+### Usage
+
+```bash
+python manage.py scrape_user <userid>
+```
+
+### Arguments
+
+- `userid` - The user ID to scrape (required, must be an integer)
+
+### Examples
+
+Scrape user collection:
+
+```bash
+python manage.py scrape_user 12345
+```
+
+### Output
+
+The command:
+
+- Scrapes all collection entries from the user's profile
+- Caches the data for 7 days (604800 seconds)
+- Displays statistics (total entries, pages scraped)
+- Extracts kit slugs and IDs from collection entries
+- Saves raw data to `user_collection_{userid}.json`
+
+### Notes
+
+- Uses the FootballKitArchive API for efficient data retrieval
+- Filters out entries with custom fields, purchase/value data, gender, or printing type
+- Displays warnings if no entries are returned
+- Shows first 10 kit references in console output
+- Logs detailed information including filtering details

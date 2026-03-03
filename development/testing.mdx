@@ -1,0 +1,500 @@
+---
+title: 'Testing'
+description: 'Running tests, test structure, and coverage guidelines for FKApi'
+---
+
+## Overview
+
+FKApi uses pytest for testing with comprehensive coverage of API endpoints, models, services, and scrapers. This guide covers running tests, writing new tests, and maintaining test quality.
+
+## Test Configuration
+
+### Pytest Settings
+
+Test configuration is defined in `pytest.ini`:
+
+```ini
+[pytest]
+DJANGO_SETTINGS_MODULE = test_settings
+python_files = tests.py test_*.py *_tests.py
+addopts = -v --tb=short --reuse-db --nomigrations --cov=core --cov-report=term-missing --cov-report=html --cov-report=xml
+testpaths = fkapi
+norecursedirs = .* venv .venv
+pythonpath = . fkapi
+markers =
+    slow: marks tests as slow (deselect with '-m "not slow"')
+    integration: marks tests as integration tests
+    unit: marks tests as unit tests
+```
+
+### Test Settings
+
+Tests use a separate settings file (`fkapi/test_settings.py`) with:
+
+- **SQLite database**: Faster than PostgreSQL for testing
+- **Local memory cache**: No Redis required
+- **Disabled Celery**: Tests run synchronously
+- **Simplified middleware**: Only essential middleware enabled
+
+```python
+# Database: SQLite for speed
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "test_db.sqlite3",
+    }
+}
+
+# Cache: Local memory
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "unique-snowflake",
+    }
+}
+
+# Celery: Disabled for tests
+ENABLE_CELERY = False
+```
+
+## Running Tests
+
+### Basic Commands
+
+```bash
+# Run all tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run specific test file
+pytest fkapi/core/tests/test_api.py
+
+# Run specific test function
+pytest fkapi/core/tests/test_api.py::test_get_kit_by_slug
+
+# Run specific test class
+pytest fkapi/core/tests/test_models.py::TestKitModel
+```
+
+### Using Test Markers
+
+```bash
+# Run only unit tests
+pytest -m unit
+
+# Run only integration tests
+pytest -m integration
+
+# Skip slow tests
+pytest -m "not slow"
+
+# Run fast unit tests only
+pytest -m "unit and not slow"
+```
+
+### Coverage Reports
+
+```bash
+# Run with coverage (terminal output)
+pytest --cov=fkapi/core --cov-report=term-missing
+
+# Generate HTML coverage report
+pytest --cov=fkapi/core --cov-report=html
+# Open htmlcov/index.html in browser
+
+# Generate XML coverage report (for CI/CD)
+pytest --cov=fkapi/core --cov-report=xml
+
+# Show lines not covered
+pytest --cov=fkapi/core --cov-report=term-missing
+```
+
+### Coverage Configuration
+
+Coverage settings are defined in `pyproject.toml`:
+
+```toml
+[tool.coverage.run]
+source = ["fkapi/core"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+show_missing = true
+skip_covered = false
+precision = 2
+```
+
+## Test Structure
+
+### Test Organization
+
+```
+fkapi/core/tests/
+├── __init__.py
+├── test_api.py           # API endpoint tests
+├── test_models.py        # Model tests
+├── test_services.py      # Service layer tests
+├── test_scrapers.py      # Scraper tests
+├── test_parsers.py       # Parser tests
+├── test_cache.py         # Cache utilities tests
+├── test_middleware.py    # Middleware tests
+├── test_celery.py        # Celery task tests
+└── fixtures/             # Test fixtures and sample data
+    ├── html_samples.py
+    └── test_data.py
+```
+
+### Test File Template
+
+```python
+"""
+Tests for [feature name].
+"""
+import pytest
+from django.test import TestCase
+from core.models import Kit, Club
+
+
+class TestFeatureName(TestCase):
+    """Test suite for feature name."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.club = Club.objects.create(
+            name="Arsenal",
+            slug="arsenal-kits"
+        )
+
+    def tearDown(self):
+        """Clean up after tests."""
+        Kit.objects.all().delete()
+        Club.objects.all().delete()
+
+    def test_something(self):
+        """Test description."""
+        # Arrange
+        expected = "value"
+
+        # Act
+        result = some_function()
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.slow
+    def test_slow_operation(self):
+        """Test that takes a long time."""
+        # Slow test code
+        pass
+```
+
+## Writing Tests
+
+### API Endpoint Tests
+
+```python
+from django.test import Client
+
+def test_get_kit_by_slug():
+    """Test retrieving a kit by slug."""
+    # Arrange
+    client = Client()
+    club = Club.objects.create(name="Arsenal", slug="arsenal-kits")
+    kit = Kit.objects.create(
+        slug="arsenal-2024-home",
+        team=club,
+        name="Arsenal 2024 Home Kit"
+    )
+
+    # Act
+    response = client.get(f"/api/kits/{kit.slug}")
+
+    # Assert
+    assert response.status_code == 200
+    assert response.json()["slug"] == kit.slug
+    assert response.json()["name"] == kit.name
+```
+
+### Model Tests
+
+```python
+def test_kit_creation():
+    """Test creating a Kit model."""
+    # Arrange
+    club = Club.objects.create(name="Arsenal", slug="arsenal-kits")
+
+    # Act
+    kit = Kit.objects.create(
+        slug="arsenal-2024-home",
+        team=club,
+        name="Arsenal 2024 Home Kit"
+    )
+
+    # Assert
+    assert kit.slug == "arsenal-2024-home"
+    assert kit.team == club
+    assert str(kit) == "Arsenal 2024 Home Kit"
+```
+
+### Service Tests
+
+```python
+from core.services.kits_service import KitsService
+
+def test_kits_service_search():
+    """Test kit search service."""
+    # Arrange
+    service = KitsService()
+    Club.objects.create(name="Arsenal", slug="arsenal-kits")
+
+    # Act
+    results = service.search_kits(query="Arsenal")
+
+    # Assert
+    assert len(results) > 0
+    assert "Arsenal" in results[0].name
+```
+
+### Scraper Tests
+
+```python
+from unittest.mock import Mock, patch
+from core.scrapers import scrape_kit
+
+@patch('core.scrapers.http_get')
+def test_scrape_kit(mock_http_get):
+    """Test kit scraping."""
+    # Arrange
+    mock_http_get.return_value = '<html>...</html>'
+
+    # Act
+    result = scrape_kit('arsenal-2024-home')
+
+    # Assert
+    assert result is not None
+    assert result['slug'] == 'arsenal-2024-home'
+    mock_http_get.assert_called_once()
+```
+
+### Cache Tests
+
+```python
+from django.core.cache import cache
+from core.cache_utils import get_cached_kit
+
+def test_cache_invalidation():
+    """Test cache invalidation on model update."""
+    # Arrange
+    kit = Kit.objects.create(slug="test-kit", name="Test")
+    cached = get_cached_kit(kit.slug)
+    assert cached is not None
+
+    # Act
+    kit.name = "Updated"
+    kit.save()
+
+    # Assert
+    cache_key = f"kit_{kit.slug}"
+    assert cache.get(cache_key) is None
+```
+
+## Test Fixtures
+
+### Using Pytest Fixtures
+
+```python
+import pytest
+from core.models import Club, Kit
+
+@pytest.fixture
+def sample_club():
+    """Create a sample club for testing."""
+    return Club.objects.create(
+        name="Arsenal",
+        slug="arsenal-kits"
+    )
+
+@pytest.fixture
+def sample_kit(sample_club):
+    """Create a sample kit for testing."""
+    return Kit.objects.create(
+        slug="arsenal-2024-home",
+        team=sample_club,
+        name="Arsenal 2024 Home Kit"
+    )
+
+def test_with_fixtures(sample_kit):
+    """Test using fixtures."""
+    assert sample_kit.slug == "arsenal-2024-home"
+    assert sample_kit.team.name == "Arsenal"
+```
+
+### HTML Fixtures
+
+Store sample HTML in `fixtures/html_samples.py`:
+
+```python
+SAMPLE_KIT_PAGE = """
+<html>
+  <body>
+    <h1>Arsenal 2024 Home Kit</h1>
+    <img src="/kits/arsenal-2024.jpg" />
+  </body>
+</html>
+"""
+```
+
+## Best Practices
+
+### Test Naming
+
+- Use descriptive names: `test_get_kit_returns_404_when_not_found`
+- Follow pattern: `test_[function]_[scenario]_[expected]`
+- Use docstrings to explain complex tests
+
+### Test Independence
+
+```python
+def setUp(self):
+    """Create fresh test data for each test."""
+    cache.clear()  # Clear cache
+    # Create test data
+
+def tearDown(self):
+    """Clean up after each test."""
+    Kit.objects.all().delete()
+    Club.objects.all().delete()
+```
+
+### Mocking External Services
+
+```python
+from unittest.mock import patch
+
+@patch('core.scrapers.requests.get')
+def test_scraper_handles_timeout(mock_get):
+    """Test scraper handles timeouts gracefully."""
+    mock_get.side_effect = TimeoutError()
+    result = scrape_kit('test-slug')
+    assert result is None
+```
+
+### Testing Edge Cases
+
+```python
+def test_empty_search_query():
+    """Test search with empty query."""
+    results = search_kits(query="")
+    assert results == []
+
+def test_invalid_slug():
+    """Test API with invalid slug."""
+    response = client.get("/api/kits/invalid!!!slug")
+    assert response.status_code == 404
+```
+
+## Continuous Integration
+
+Tests run automatically on:
+
+- Every commit (pre-commit hooks)
+- Every pull request (GitHub Actions)
+- Before deployment
+
+### Pre-commit Tests
+
+```yaml
+# .pre-commit-config.yaml
+- id: pytest-celery-tests
+  name: Pytest Celery Tests
+  entry: bash -c 'python -m pytest fkapi/core/tests/test_celery.py -v --tb=short'
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [commit]
+```
+
+## Coverage Goals
+
+- **Overall**: >80% coverage
+- **Critical paths**: >90% coverage (API endpoints, models)
+- **New code**: 100% coverage required
+- **Excluded**: Migrations, test files, admin files
+
+### Checking Coverage
+
+```bash
+# Generate coverage report
+pytest --cov=fkapi/core --cov-report=term-missing
+
+# View in browser
+pytest --cov=fkapi/core --cov-report=html
+open htmlcov/index.html
+```
+
+## Troubleshooting Tests
+
+### Tests Failing Locally
+
+```bash
+# Clear test database
+rm fkapi/test_db.sqlite3
+
+# Clear cache
+python -c "from django.core.cache import cache; cache.clear()"
+
+# Reinstall dependencies
+pip install -r fkapi/requirements-dev.txt
+
+# Run tests with verbose output
+pytest -vv
+```
+
+### Import Errors
+
+Ensure `pythonpath` is set correctly in `pytest.ini`:
+
+```ini
+pythonpath = . fkapi
+```
+
+### Database Errors
+
+Tests use SQLite by default. Check `test_settings.py` is configured correctly.
+
+### Cache Issues
+
+Clear cache in `setUp()` method:
+
+```python
+def setUp(self):
+    cache.clear()
+```
+
+## Additional Resources
+
+- [Pytest Documentation](https://docs.pytest.org/)
+- [Django Testing Guide](https://docs.djangoproject.com/en/4.2/topics/testing/)
+- [Coverage.py Documentation](https://coverage.readthedocs.io/)
+
+---
+
+**Remember**: Good tests make confident refactoring possible!

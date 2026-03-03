@@ -1,0 +1,601 @@
+---
+title: Monitoring and Metrics
+description: Set up Prometheus and Grafana for application monitoring
+---
+
+This guide covers setting up a complete monitoring stack for FKApi using Prometheus for metrics collection and Grafana for visualization.
+
+## Overview
+
+The monitoring stack provides:
+
+- **Prometheus**: Time-series metrics collection and storage
+- **Grafana**: Dashboard visualization and alerting
+- **Redis Exporter**: Redis-specific metrics
+- **PostgreSQL Exporter**: Database performance metrics
+- **django-prometheus**: Django and application metrics
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│                   Grafana                       │
+│            (Visualization Layer)                │
+└────────────────┬────────────────────────────────┘
+                 │ Query metrics
+                 ↓
+┌─────────────────────────────────────────────────┐
+│                Prometheus                       │
+│              (Metrics Storage)                  │
+└─┬───────┬───────┬────────┬─────────────────────┘
+  │       │       │        │
+  │       │       │        └─→ PostgreSQL Exporter
+  │       │       │               (DB Metrics)
+  │       │       │
+  │       │       └─→ Redis Exporter
+  │       │           (Cache Metrics)
+  │       │
+  │       └─→ Flower
+  │           (Celery Metrics)
+  │
+  └─→ Django App (/metrics endpoint)
+      (App Metrics)
+```
+
+## Prerequisites
+
+Before setting up monitoring, ensure you have:
+
+- FKApi running (see [Setup Guide](/guides/setup))
+- Docker and docker-compose (for containerized deployment)
+- Redis running (for cache metrics)
+- PostgreSQL running (for database metrics)
+
+## Installation
+
+<Steps>
+
+### Install django-prometheus
+
+Add Prometheus metrics support to Django:
+
+```bash
+pip install django-prometheus prometheus-client
+```
+
+### Update Django Settings
+
+Add to `INSTALLED_APPS` in `fkapi/settings.py`:
+
+```python
+INSTALLED_APPS = [
+    'django_prometheus',  # Add at the beginning
+    # ... other apps
+]
+```
+
+Add Prometheus middleware (order matters):
+
+```python
+MIDDLEWARE = [
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',  # First
+    'django.middleware.security.SecurityMiddleware',
+    # ... other middleware
+    'django_prometheus.middleware.PrometheusAfterMiddleware',   # Last
+]
+```
+
+### Add Metrics Endpoint
+
+Add to `fkapi/urls.py`:
+
+```python
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/', include('core.urls')),
+    path('', include('django_prometheus.urls')),  # Adds /metrics endpoint
+]
+```
+
+### Verify Metrics Endpoint
+
+Start Django and test the metrics endpoint:
+
+```bash
+python manage.py runserver
+curl http://localhost:8000/metrics
+```
+
+You should see Prometheus-format metrics:
+
+```
+# HELP python_gc_objects_collected_total Objects collected during gc
+# TYPE python_gc_objects_collected_total counter
+python_gc_objects_collected_total{generation="0"} 1234.0
+# HELP django_http_requests_total_by_method_total
+# TYPE django_http_requests_total_by_method_total counter
+django_http_requests_total_by_method{method="GET"} 42.0
+...
+```
+
+</Steps>
+
+## Docker Compose Setup
+
+FKApi includes monitoring services in `docker-compose.yml` using the `monitoring` profile.
+
+### Start Monitoring Stack
+
+```bash
+# Start all services including monitoring
+docker compose --profile monitoring up -d
+
+# Or start monitoring services separately
+docker compose up -d  # Start core services first
+docker compose --profile monitoring up -d  # Add monitoring
+```
+
+### Monitoring Services
+
+The docker-compose configuration includes:
+
+**Prometheus**
+```yaml
+prometheus:
+  image: prom/prometheus:latest
+  profiles:
+    - monitoring
+  volumes:
+    - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    - prometheus_data:/prometheus
+  command:
+    - '--config.file=/etc/prometheus/prometheus.yml'
+    - '--storage.tsdb.path=/prometheus'
+  ports:
+    - "${PROMETHEUS_PORT:-9090}:9090"
+```
+
+**Redis Exporter**
+```yaml
+redis_exporter:
+  image: oliver006/redis_exporter:latest
+  profiles:
+    - monitoring
+  environment:
+    - REDIS_ADDR=redis://redis:6379
+  ports:
+    - "${REDIS_EXPORTER_PORT:-9121}:9121"
+```
+
+**PostgreSQL Exporter**
+```yaml
+postgres_exporter:
+  image: prometheuscommunity/postgres-exporter:latest
+  profiles:
+    - monitoring
+  environment:
+    - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
+  ports:
+    - "${POSTGRES_EXPORTER_PORT:-9187}:9187"
+```
+
+## Prometheus Configuration
+
+Create `prometheus/prometheus.yml`:
+
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'fkapi-monitor'
+
+scrape_configs:
+  # Django application metrics
+  - job_name: 'django'
+    static_configs:
+      - targets: ['web:8000']
+    metrics_path: '/metrics'
+
+  # Celery metrics via Flower
+  - job_name: 'celery'
+    static_configs:
+      - targets: ['flower:5555']
+    metrics_path: '/metrics'
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis_exporter:9121']
+
+  # PostgreSQL metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres_exporter:9187']
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+```
+
+<Note>
+If using systemd PostgreSQL instead of Docker, change the postgres target to `host.docker.internal:9187` or your server IP.
+</Note>
+
+## Custom Metrics
+
+FKApi includes custom metrics defined in `core/metrics.py`:
+
+### User Collection Metrics
+
+```python
+from prometheus_client import Counter, Histogram
+
+# Scrape counter
+user_collection_scrapes_total = Counter(
+    'fkapi_user_collection_scrapes_total',
+    'Total number of user collection scrapes',
+    ['userid', 'status']  # status: success, error, filtered
+)
+
+# Scrape duration
+user_collection_scrape_duration_seconds = Histogram(
+    'fkapi_user_collection_scrape_duration_seconds',
+    'Time spent scraping user collections',
+    ['userid'],
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]
+)
+
+# Entries scraped
+user_collection_entries_scraped = Histogram(
+    'fkapi_user_collection_entries_scraped',
+    'Number of entries scraped per collection',
+    ['userid'],
+    buckets=[0, 10, 50, 100, 200, 500, 1000, 2000]
+)
+```
+
+### Cache Metrics
+
+```python
+from prometheus_client import Counter, Gauge
+
+# Cache hit/miss counters
+cache_hits = Counter(
+    'fkapi_cache_hits_total',
+    'Total number of cache hits',
+    ['cache_type']
+)
+
+cache_misses = Counter(
+    'fkapi_cache_misses_total',
+    'Total number of cache misses',
+    ['cache_type']
+)
+
+# Cache entries gauge
+cache_entries = Gauge(
+    'fkapi_cache_entries',
+    'Number of entries in cache',
+    ['cache_type']
+)
+```
+
+### Celery Task Metrics
+
+```python
+from prometheus_client import Histogram
+
+# Task duration
+celery_task_duration_seconds = Histogram(
+    'fkapi_celery_task_duration_seconds',
+    'Duration of Celery tasks',
+    ['task_name', 'status'],
+    buckets=[1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0]
+)
+```
+
+### API Endpoint Metrics
+
+```python
+from prometheus_client import Counter, Histogram
+
+# Request counter
+api_endpoint_requests = Counter(
+    'fkapi_api_endpoint_requests_total',
+    'Total API endpoint requests',
+    ['endpoint', 'method', 'status_code']
+)
+
+# Response time
+api_endpoint_duration_seconds = Histogram(
+    'fkapi_api_endpoint_duration_seconds',
+    'API endpoint response time',
+    ['endpoint', 'method'],
+    buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]
+)
+```
+
+### Using Custom Metrics
+
+Instrument your code with metrics:
+
+```python
+from core.metrics import (
+    user_collection_scrapes_total,
+    user_collection_scrape_duration_seconds,
+    cache_hits,
+    cache_misses,
+)
+import time
+
+def scrape_user_collection(userid):
+    """Scrape user collection with metrics."""
+    start_time = time.time()
+    
+    try:
+        # Perform scraping
+        result = perform_scrape(userid)
+        
+        # Record success
+        user_collection_scrapes_total.labels(
+            userid=userid,
+            status='success'
+        ).inc()
+        
+        return result
+        
+    except Exception as e:
+        # Record error
+        user_collection_scrapes_total.labels(
+            userid=userid,
+            status='error'
+        ).inc()
+        raise
+        
+    finally:
+        # Record duration
+        duration = time.time() - start_time
+        user_collection_scrape_duration_seconds.labels(
+            userid=userid
+        ).observe(duration)
+
+def get_cached_data(cache_key, cache_type='default'):
+    """Get data with cache metrics."""
+    from django.core.cache import cache
+    
+    data = cache.get(cache_key)
+    
+    if data is not None:
+        cache_hits.labels(cache_type=cache_type).inc()
+        return data
+    else:
+        cache_misses.labels(cache_type=cache_type).inc()
+        # Fetch and cache data
+        data = fetch_data()
+        cache.set(cache_key, data)
+        return data
+```
+
+## Grafana Setup
+
+### Install Grafana
+
+<Tabs>
+  <Tab title="Docker">
+    Add to `docker-compose.yml`:
+    
+    ```yaml
+    grafana:
+      image: grafana/grafana:latest
+      profiles:
+        - monitoring
+      ports:
+        - "3000:3000"
+      environment:
+        - GF_SECURITY_ADMIN_PASSWORD=admin
+        - GF_USERS_ALLOW_SIGN_UP=false
+      volumes:
+        - grafana_data:/var/lib/grafana
+        - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+        - ./grafana/datasources:/etc/grafana/provisioning/datasources
+      depends_on:
+        - prometheus
+    ```
+  </Tab>
+  
+  <Tab title="Linux (systemd)">
+    ```bash
+    # Add Grafana repository
+    sudo apt-get install -y software-properties-common
+    sudo add-apt-repository "deb https://packages.grafana.com/oss/deb stable main"
+    wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
+    
+    # Install Grafana
+    sudo apt-get update
+    sudo apt-get install grafana
+    
+    # Start Grafana
+    sudo systemctl start grafana-server
+    sudo systemctl enable grafana-server
+    ```
+  </Tab>
+  
+  <Tab title="macOS">
+    ```bash
+    # Install via Homebrew
+    brew install grafana
+    
+    # Start Grafana
+    brew services start grafana
+    ```
+  </Tab>
+</Tabs>
+
+### Add Prometheus Data Source
+
+<Steps>
+
+### Access Grafana
+
+Open http://localhost:3000
+
+Default credentials:
+- Username: `admin`
+- Password: `admin`
+
+### Add Data Source
+
+1. Click **Configuration** (gear icon) → **Data Sources**
+2. Click **Add data source**
+3. Select **Prometheus**
+4. Configure:
+   - **Name**: `Prometheus`
+   - **URL**: `http://prometheus:9090` (Docker) or `http://localhost:9090` (systemd)
+   - **Access**: `Server`
+5. Click **Save & Test**
+
+</Steps>
+
+### Create Dashboard
+
+FKApi includes a pre-built Grafana dashboard. Import it:
+
+<Steps>
+
+### Import Dashboard
+
+1. Click **+** → **Import**
+2. Upload `grafana/dashboards/fkapi-overview.json`
+3. Select **Prometheus** data source
+4. Click **Import**
+
+</Steps>
+
+The dashboard includes:
+
+- **Request Rate**: Requests per second by endpoint
+- **Response Time**: P50, P95, P99 latencies
+- **Error Rate**: 4xx and 5xx error rates
+- **Cache Hit Rate**: Cache effectiveness
+- **Database Performance**: Query counts and durations
+- **Celery Tasks**: Task success/failure rates
+- **Redis Metrics**: Memory usage, operations/sec
+- **System Resources**: CPU, memory, disk usage
+
+## Monitoring Best Practices
+
+<AccordionGroup>
+  <Accordion title="Metric Selection">
+    - Focus on user-facing metrics (latency, errors)
+    - Track resource utilization (CPU, memory, disk)
+    - Monitor cache hit rates
+    - Track task success/failure rates
+    - Measure database query performance
+  </Accordion>
+  
+  <Accordion title="Alerting">
+    - Set up alerts for high error rates
+    - Alert on high latency (P95 > threshold)
+    - Monitor disk space usage
+    - Alert on cache connection failures
+    - Track task queue backlogs
+  </Accordion>
+  
+  <Accordion title="Dashboard Design">
+    - Group related metrics together
+    - Use appropriate time ranges
+    - Include both current and historical views
+    - Add annotations for deployments
+    - Use variables for filtering
+  </Accordion>
+  
+  <Accordion title="Data Retention">
+    - Configure Prometheus retention period
+    - Archive historical data if needed
+    - Monitor Prometheus storage size
+    - Consider using remote storage for long-term data
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Metrics Endpoint Not Found
+
+**Error**: 404 at `/metrics`
+
+**Solution**:
+1. Verify `django_prometheus` is installed: `pip list | grep django-prometheus`
+2. Check `INSTALLED_APPS` includes `'django_prometheus'`
+3. Verify URL configuration includes `path('', include('django_prometheus.urls'))`
+4. Restart Django server
+
+### Prometheus Not Scraping
+
+**Error**: No data in Prometheus UI
+
+**Solution**:
+1. Check Prometheus targets: http://localhost:9090/targets
+2. Verify all targets show as "UP"
+3. Check firewall rules allow access
+4. Verify service names in `prometheus.yml` match docker-compose
+5. Check Prometheus logs: `docker compose logs prometheus`
+
+### Grafana Connection Failed
+
+**Error**: Cannot connect to data source
+
+**Solution**:
+1. Verify Prometheus is running: `docker compose ps prometheus`
+2. Check Prometheus URL in Grafana (use service name for Docker)
+3. Test Prometheus UI: http://localhost:9090
+4. Check network connectivity between containers
+
+### Missing Metrics
+
+**Error**: Some metrics not appearing
+
+**Solution**:
+1. Verify exporters are running: `docker compose ps`
+2. Check exporter logs for errors
+3. Test exporter endpoints directly:
+   - Redis: http://localhost:9121/metrics
+   - PostgreSQL: http://localhost:9187/metrics
+4. Verify Prometheus scrape configuration
+
+## Accessing Monitoring Tools
+
+Once everything is running:
+
+- **Prometheus UI**: http://localhost:9090
+  - Query metrics
+  - View targets status
+  - Check service health
+
+- **Grafana**: http://localhost:3000
+  - View dashboards
+  - Create alerts
+  - Explore metrics
+
+- **Flower** (Celery): http://localhost:5555
+  - Monitor Celery tasks
+  - View worker status
+  - Track task history
+
+- **Metrics Endpoint**: http://localhost:8000/metrics
+  - Raw Prometheus metrics
+  - Verify instrumentation
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Caching Strategy" icon="database" href="/guides/caching">
+    Optimize performance with Redis caching
+  </Card>
+  <Card title="Celery Setup" icon="clock" href="/guides/celery">
+    Configure async tasks and monitoring
+  </Card>
+</CardGroup>

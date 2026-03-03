@@ -1,0 +1,164 @@
+---
+title: "Brands Endpoints"
+description: "Search and retrieve kit brand information"
+---
+
+## Search Brands
+
+<RequestExample>
+```bash GET /api/brands/search
+curl -X GET "https://your-domain.com/api/brands/search?keyword=adidas" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Search for kit brands (manufacturers) by name or slug using trigram similarity. Returns up to 10 matched brands ordered by ID.
+
+### Query Parameters
+
+<ParamField query="keyword" type="string" required>
+  Keyword to search for in brand names or slugs. Supports fuzzy matching and accent-insensitive search.
+</ParamField>
+
+### Response
+
+Returns an array of up to 10 matching brands.
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the brand
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Brand name (e.g., "Adidas", "Nike", "Puma", "Umbro")
+</ResponseField>
+
+<ResponseField name="slug" type="string">
+  URL-friendly slug for the brand
+</ResponseField>
+
+<ResponseField name="logo" type="string">
+  URL to the brand's logo image
+</ResponseField>
+
+<ResponseField name="logo_dark" type="string">
+  URL to the brand's logo image (dark theme version)
+</ResponseField>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "id": 1,
+    "name": "Adidas",
+    "slug": "adidas-kits",
+    "logo": "https://www.footballkitarchive.com/images/logos/brands/adidas.png",
+    "logo_dark": "https://www.footballkitarchive.com/images/logos/brands/adidas-dark.png"
+  },
+  {
+    "id": 2,
+    "name": "Nike",
+    "slug": "nike-kits",
+    "logo": "https://www.footballkitarchive.com/images/logos/brands/nike.png",
+    "logo_dark": "https://www.footballkitarchive.com/images/logos/brands/nike-dark.png"
+  }
+]
+```
+</ResponseExample>
+
+### Examples
+
+<CodeGroup>
+```bash Search for Adidas
+curl -X GET "https://your-domain.com/api/brands/search?keyword=adidas"
+```
+
+```bash Search for Nike
+curl -X GET "https://your-domain.com/api/brands/search?keyword=nike"
+```
+
+```bash Search for Puma
+curl -X GET "https://your-domain.com/api/brands/search?keyword=puma"
+```
+
+```bash Search with typo (fuzzy matching)
+curl -X GET "https://your-domain.com/api/brands/search?keyword=addidas"
+# Still returns Adidas due to trigram similarity
+```
+</CodeGroup>
+
+<Note>
+Results are cached for optimal performance. The search uses trigram word similarity for fuzzy matching.
+</Note>
+
+## Get Brand by ID
+
+<RequestExample>
+```bash GET /api/brands/{brand_id}
+curl -X GET "https://your-domain.com/api/brands/1" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve detailed information about a specific brand by its ID.
+
+### Path Parameters
+
+<ParamField path="brand_id" type="integer" required>
+  The unique identifier of the brand
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the brand
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Brand name
+</ResponseField>
+
+<ResponseField name="slug" type="string">
+  URL-friendly slug for the brand
+</ResponseField>
+
+<ResponseField name="logo" type="string">
+  URL to the brand's logo image
+</ResponseField>
+
+<ResponseField name="logo_dark" type="string">
+  URL to the brand's logo image (dark theme version)
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "id": 1,
+  "name": "Adidas",
+  "slug": "adidas-kits",
+  "logo": "https://www.footballkitarchive.com/images/logos/brands/adidas.png",
+  "logo_dark": "https://www.footballkitarchive.com/images/logos/brands/adidas-dark.png"
+}
+```
+</ResponseExample>
+
+## Popular Brands
+
+The Football Kit Archive includes kits from major manufacturers:
+
+- **Adidas** - One of the world's largest sportswear manufacturers
+- **Nike** - Leading sports brand with global presence
+- **Puma** - Major sportswear manufacturer
+- **Umbro** - Traditional football kit manufacturer
+- **New Balance** - American sportswear brand
+- **Macron** - Italian sportswear manufacturer
+- **Hummel** - Danish sportswear brand
+- **Kappa** - Italian sportswear brand
+- **Joma** - Spanish sportswear manufacturer
+- **Errea** - Italian sportswear brand
+- **Castore** - British premium sportswear brand
+- **Under Armour** - American sports equipment company
+- And many more...
+
+<Tip>
+Use the search endpoint to discover all available brands in the database.
+</Tip>

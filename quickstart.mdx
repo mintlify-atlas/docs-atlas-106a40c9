@@ -1,80 +1,348 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart Guide
+description: Get up and running with FKApi in under 5 minutes
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will get you from zero to making your first API call in under 5 minutes. We'll use SQLite for quick setup, but PostgreSQL is recommended for production.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  For a complete production setup with PostgreSQL, Redis, and Celery, see the [Installation Guide](/installation).
 </Note>
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- **Python 3.11+** installed on your system
+- **Git** for cloning the repository
+- Basic familiarity with command line operations
+
+## Installation
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the FKApi repository to your local machine:
+
+    ```bash
+    git clone <repository-url>
+    cd FKApi/fkapi
+    ```
+  </Step>
+
+  <Step title="Create Virtual Environment">
+    Create and activate a Python virtual environment:
+
+    <CodeGroup>
+      ```bash Linux/Mac
+      python -m venv venv
+      source venv/bin/activate
+      ```
+
+      ```bash Windows
+      python -m venv venv
+      venv\Scripts\activate
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Install Dependencies">
+    Install all required Python packages:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    This installs Django 5.0.4, Django Ninja, PostgreSQL adapter, BeautifulSoup4, Redis client, and other dependencies.
+  </Step>
+
+  <Step title="Configure Environment">
+    Create a `.env` file from the example:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    For quickstart, edit `.env` with minimal settings:
+
+    ```bash .env
+    # Django Settings
+    DJANGO_DEBUG=True
+    DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+    DJANGO_PORT=8000
+
+    # PostgreSQL Database
+    POSTGRES_DB=fkapi
+    POSTGRES_USER=postgres
+    POSTGRES_PASSWORD=postgres
+    POSTGRES_HOST=localhost
+    POSTGRES_PORT=5432
+
+    # Scraper Settings
+    SCRAPER_USER_AGENT=FootballKitArchiveBot/1.0 (contact@youremail.com)
+    ```
+
+    <Warning>
+      The `SCRAPER_USER_AGENT` must include your contact information for ethical scraping.
+    </Warning>
+  </Step>
+
+  <Step title="Set Up Database">
+    Create the PostgreSQL database and run migrations:
+
+    <CodeGroup>
+      ```bash PostgreSQL
+      # Create database
+      createdb fkapi
+
+      # Run migrations
+      python manage.py migrate
+      ```
+
+      ```bash Docker (Alternative)
+      # Start PostgreSQL in Docker
+      docker run -d --name fkapi-postgres \
+        -e POSTGRES_DB=fkapi \
+        -e POSTGRES_USER=postgres \
+        -e POSTGRES_PASSWORD=postgres \
+        -p 5432:5432 \
+        postgres:15
+
+      # Run migrations
+      python manage.py migrate
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Create Superuser">
+    Create an admin user for the Django admin interface:
+
+    ```bash
+    python manage.py createsuperuser
+    ```
+
+    Follow the prompts to set username, email, and password.
+  </Step>
+
+  <Step title="Start the Server">
+    Launch the development server:
+
+    ```bash
+    python manage.py runserver
+    ```
+
+    You should see:
+    ```
+    Starting development server at http://127.0.0.1:8000/
+    ```
+  </Step>
+</Steps>
+
+## Your First API Call
+
+### Health Check
+
+Verify the API is running:
+
+<CodeGroup>
+  ```bash cURL
+  curl http://localhost:8000/api/health
+  ```
+
+  ```python Python
+  import requests
+
+  response = requests.get('http://localhost:8000/api/health')
+  print(response.json())
+  ```
+
+  ```javascript JavaScript
+  fetch('http://localhost:8000/api/health')
+    .then(res => res.json())
+    .then(data => console.log(data));
+  ```
+</CodeGroup>
+
+Expected response:
+```json
+{
+  "status": "ok",
+  "database": "connected",
+  "cache": "available"
+}
+```
+
+## Populating Data
+
+<Warning>
+  The database starts empty! You need to populate it with data through web scraping.
+</Warning>
+
+### Test Scraping (Single Kit)
+
+Before bulk scraping, test with a single kit:
+
+```bash
+python manage.py scrape_kit_by_slug --slug "arsenal-2024-home-kit"
+```
+
+### Search for the Kit
+
+Once scraped, search for kits:
+
+<CodeGroup>
+  ```bash cURL
+  curl "http://localhost:8000/api/kits?page=1&page_size=10"
+  ```
+
+  ```python Python
+  import requests
+
+  response = requests.get(
+      'http://localhost:8000/api/kits',
+      params={'page': 1, 'page_size': 10}
+  )
+  kits = response.json()
+  print(f"Found {len(kits)} kits")
+  ```
+</CodeGroup>
+
+### Search Clubs
+
+Search for clubs with fuzzy matching:
+
+```bash
+curl "http://localhost:8000/api/clubs/search?keyword=arsenal&page_size=5"
+```
+
+Response:
+```json
+[
+  {
+    "id": 1,
+    "name": "Arsenal",
+    "slug": "arsenal-kits",
+    "logo": "https://...",
+    "country": "GB"
+  }
+]
+```
+
+## Interactive API Documentation
+
+Explore all endpoints in the auto-generated Swagger UI:
+
+```
+http://localhost:8000/api/docs
+```
+
+Features:
+- Try out endpoints directly in the browser
+- View request/response schemas
+- See all available parameters and filters
+- Copy code examples in multiple languages
+
+## Common Endpoints
+
+Here are the most commonly used endpoints:
+
+<CardGroup cols={2}>
+  <Card title="Search Clubs" icon="magnifying-glass">
+    ```
+    GET /api/clubs/search?keyword={term}
+    ```
+    Fuzzy search with accent-insensitive matching
+  </Card>
+
+  <Card title="Get Club Kits" icon="shirt">
+    ```
+    GET /api/clubs/{club_id}/kits
+    ```
+    All kits for a specific club
+  </Card>
+
+  <Card title="List Kits" icon="list">
+    ```
+    GET /api/kits?page=1&page_size=20
+    ```
+    Paginated kit listing
+  </Card>
+
+  <Card title="Search Seasons" icon="calendar">
+    ```
+    GET /api/seasons/search?keyword=2024
+    ```
+    Priority-based season matching
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Steps>
+  <Step title="Explore More Endpoints">
+    Visit the [API Reference](/api/overview) to see all available endpoints and their parameters
+  </Step>
+
+  <Step title="Populate Your Database">
+    Learn ethical scraping practices in the Getting Started guide to populate your database responsibly
+  </Step>
+
+  <Step title="Production Setup">
+    Follow the [Installation Guide](/installation) for PostgreSQL, Redis caching, and Celery configuration
+  </Step>
+
+  <Step title="Configure Rate Limiting">
+    Set up IP whitelisting and adjust rate limits for your use case
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Database Connection Errors
+
+If you see database connection errors:
+
+```bash
+# Verify PostgreSQL is running
+pg_isready
+
+# Check database exists
+psql -l | grep fkapi
+
+# Test connection
+psql -U postgres -d fkapi
+```
+
+### Empty API Responses
+
+If endpoints return empty arrays `[]`:
+
+<Note>
+  This is normal! The database starts empty. You need to scrape data using management commands like `scrape_kit_by_slug` or `scrape_whole_club`.
+</Note>
+
+### Port Already in Use
+
+If port 8000 is occupied:
+
+```bash
+# Use a different port
+python manage.py runserver 8001
+```
+
+### Migration Errors
+
+If migrations fail:
+
+```bash
+# Reset migrations (development only)
+python manage.py migrate --run-syncdb
+```
+
+## Getting Help
+
+- Check the [Installation Guide](/installation) for detailed setup instructions
+- Visit the API documentation at `http://localhost:8000/api/docs`
+- Review the source code on GitHub
+- Check the CHANGELOG.md for version-specific notes

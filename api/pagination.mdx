@@ -1,0 +1,478 @@
+---
+title: Pagination
+description: API pagination parameters, response format, and usage examples
+---
+
+## Overview
+
+Endpoints that return lists of resources support pagination to manage large result sets efficiently. Pagination is implemented using page numbers and page sizes.
+
+## Pagination Parameters
+
+All list endpoints accept these query parameters:
+
+| Parameter | Type | Default | Min | Max | Description |
+|-----------|------|---------|-----|-----|-------------|
+| `page` | integer | 1 | 1 | - | Page number to retrieve |
+| `page_size` | integer | 20 | 1 | 100 | Number of items per page |
+
+From `fkapi/api.py:50-51`:
+
+```python
+_QUERY_PAGE_DESC = "Page number"
+_QUERY_PAGE_SIZE_DESC = "Items per page"
+```
+
+From `fkapi/api.py:828-829`:
+
+```python
+_QUERY_PAGE = Query(1, description=_QUERY_PAGE_DESC, ge=1)
+_QUERY_PAGE_SIZE = Query(20, description=_QUERY_PAGE_SIZE_DESC, ge=1, le=100)
+```
+
+## Paginated Endpoints
+
+The following endpoints support pagination:
+
+- `GET /api/kits` - List kits with filtering
+- `GET /api/clubs/{club_id}/kits` - Get club kits
+- Any endpoint that returns a list of resources
+
+## Request Examples
+
+### Basic Pagination
+
+Get the first page with default page size (20 items):
+
+```bash
+curl "http://localhost:8000/api/kits?page=1"
+```
+
+### Custom Page Size
+
+Get 50 items per page:
+
+```bash
+curl "http://localhost:8000/api/kits?page=1&page_size=50"
+```
+
+### Navigate Pages
+
+```bash
+# First page
+curl "http://localhost:8000/api/kits?page=1&page_size=20"
+
+# Second page
+curl "http://localhost:8000/api/kits?page=2&page_size=20"
+
+# Third page
+curl "http://localhost:8000/api/kits?page=3&page_size=20"
+```
+
+### Maximum Page Size
+
+Get maximum allowed items (100) per page:
+
+```bash
+curl "http://localhost:8000/api/kits?page=1&page_size=100"
+```
+
+## Response Format
+
+Paginated responses return an array of items. The actual pagination metadata (total count, page info) is not included in the response body but can be inferred from the result count.
+
+From `fkapi/api.py:614-619`:
+
+```python
+paginator = Paginator(kits_query, page_size)
+page_obj = paginator.get_page(page)
+kits = list(page_obj)
+
+cache.set(cache_key, kits, timeout=settings.CACHE_TIMEOUT_MEDIUM)
+return kits
+```
+
+### Example Response
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Barcelona Home 2024-25",
+    "slug": "barcelona-home-2024-25",
+    "team": {
+      "id": 1,
+      "name": "Barcelona",
+      "slug": "barcelona",
+      "logo": "https://example.com/logo.png"
+    },
+    "season": {
+      "id": 1,
+      "year": "2024-25",
+      "first_year": "2024",
+      "second_year": "25"
+    },
+    "main_img_url": "https://example.com/kit.jpg"
+  },
+  {
+    "id": 2,
+    "name": "Real Madrid Home 2024-25",
+    "slug": "real-madrid-home-2024-25",
+    "team": {
+      "id": 2,
+      "name": "Real Madrid",
+      "slug": "real-madrid",
+      "logo": "https://example.com/logo.png"
+    },
+    "season": {
+      "id": 1,
+      "year": "2024-25",
+      "first_year": "2024",
+      "second_year": "25"
+    },
+    "main_img_url": "https://example.com/kit.jpg"
+  }
+]
+```
+
+## Determining End of Results
+
+If a page returns fewer items than the requested `page_size`, you've reached the end of the result set:
+
+```python
+import requests
+
+def fetch_all_kits():
+    page = 1
+    page_size = 50
+    all_kits = []
+    
+    while True:
+        response = requests.get(
+            f"http://localhost:8000/api/kits",
+            params={"page": page, "page_size": page_size}
+        )
+        kits = response.json()
+        
+        if not kits:
+            # No more results
+            break
+        
+        all_kits.extend(kits)
+        
+        if len(kits) < page_size:
+            # Last page (partial results)
+            break
+        
+        page += 1
+    
+    return all_kits
+```
+
+## Pagination with Filtering
+
+Combine pagination with filter parameters:
+
+```bash
+# Get red kits from 2024, page 2, 30 items per page
+curl "http://localhost:8000/api/kits?primary_color=Red&year=2024&page=2&page_size=30"
+```
+
+### Example: Club Kits with Pagination
+
+```bash
+# Get second page of club kits
+curl "http://localhost:8000/api/clubs/1/kits?page=2&page_size=25"
+```
+
+## Implementation Examples
+
+### Python
+
+```python
+import requests
+
+class PaginatedAPI:
+    def __init__(self, base_url):
+        self.base_url = base_url
+    
+    def get_page(self, endpoint, page=1, page_size=20, **filters):
+        """Get a single page of results."""
+        params = {
+            "page": page,
+            "page_size": page_size,
+            **filters
+        }
+        response = requests.get(f"{self.base_url}{endpoint}", params=params)
+        response.raise_for_status()
+        return response.json()
+    
+    def get_all(self, endpoint, page_size=50, **filters):
+        """Get all results across all pages."""
+        all_results = []
+        page = 1
+        
+        while True:
+            results = self.get_page(endpoint, page, page_size, **filters)
+            
+            if not results:
+                break
+            
+            all_results.extend(results)
+            
+            if len(results) < page_size:
+                break
+            
+            page += 1
+        
+        return all_results
+
+# Usage
+api = PaginatedAPI("http://localhost:8000/api")
+
+# Get first page
+kits = api.get_page("/kits", page=1, page_size=20)
+
+# Get all kits with filters
+all_red_kits = api.get_all("/kits", page_size=50, primary_color="Red")
+```
+
+### JavaScript
+
+```javascript
+class PaginatedAPI {
+  constructor(baseUrl) {
+    this.baseUrl = baseUrl;
+  }
+
+  async getPage(endpoint, page = 1, pageSize = 20, filters = {}) {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      page_size: pageSize.toString(),
+      ...filters
+    });
+
+    const response = await fetch(`${this.baseUrl}${endpoint}?${params}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  }
+
+  async *iterPages(endpoint, pageSize = 50, filters = {}) {
+    let page = 1;
+    
+    while (true) {
+      const results = await this.getPage(endpoint, page, pageSize, filters);
+      
+      if (results.length === 0) {
+        break;
+      }
+      
+      yield results;
+      
+      if (results.length < pageSize) {
+        break;
+      }
+      
+      page++;
+    }
+  }
+
+  async getAll(endpoint, pageSize = 50, filters = {}) {
+    const allResults = [];
+    
+    for await (const pageResults of this.iterPages(endpoint, pageSize, filters)) {
+      allResults.push(...pageResults);
+    }
+    
+    return allResults;
+  }
+}
+
+// Usage
+const api = new PaginatedAPI('http://localhost:8000/api');
+
+// Get first page
+const kits = await api.getPage('/kits', 1, 20);
+
+// Get all kits
+const allKits = await api.getAll('/kits', 50);
+
+// Iterate pages
+for await (const pageResults of api.iterPages('/kits', 50, { primary_color: 'Red' })) {
+  console.log(`Got ${pageResults.length} results`);
+  // Process page results
+}
+```
+
+### TypeScript
+
+```typescript
+interface PaginationParams {
+  page: number;
+  page_size: number;
+  [key: string]: any;
+}
+
+interface Kit {
+  id: number;
+  name: string;
+  slug: string;
+  team: {
+    id: number;
+    name: string;
+    slug: string;
+    logo: string;
+  };
+  season: {
+    id: number;
+    year: string;
+  };
+  main_img_url: string;
+}
+
+class PaginatedKitAPI {
+  constructor(private baseUrl: string) {}
+
+  async getPage(
+    page: number = 1,
+    pageSize: number = 20,
+    filters: Record<string, any> = {}
+  ): Promise<Kit[]> {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      page_size: pageSize.toString(),
+      ...filters
+    });
+
+    const response = await fetch(`${this.baseUrl}/kits?${params}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return await response.json();
+  }
+
+  async *iterPages(
+    pageSize: number = 50,
+    filters: Record<string, any> = {}
+  ): AsyncGenerator<Kit[]> {
+    let page = 1;
+    
+    while (true) {
+      const results = await this.getPage(page, pageSize, filters);
+      
+      if (results.length === 0) break;
+      
+      yield results;
+      
+      if (results.length < pageSize) break;
+      
+      page++;
+    }
+  }
+}
+
+// Usage
+const api = new PaginatedKitAPI('http://localhost:8000/api');
+
+// Get first page
+const kits: Kit[] = await api.getPage(1, 20);
+
+// Iterate all pages
+for await (const pageResults of api.iterPages(50, { primary_color: 'Red' })) {
+  pageResults.forEach(kit => {
+    console.log(kit.name);
+  });
+}
+```
+
+## Pagination Best Practices
+
+### For API Consumers
+
+1. **Use Appropriate Page Size**: Balance between request count and response size
+   - Small datasets: 20-50 items
+   - Large datasets: 50-100 items
+   - Avoid requesting 1-2 items per page (inefficient)
+
+2. **Implement Pagination Logic**: Always handle multiple pages when fetching all data
+
+3. **Cache Results**: Cache paginated results to avoid repeated requests
+
+4. **Handle Empty Results**: Check for empty arrays to detect end of data
+
+5. **Combine with Filters**: Use filters to reduce total result count
+
+### Performance Tips
+
+```python
+# Good: Request reasonable page size
+response = requests.get("/api/kits", params={"page": 1, "page_size": 50})
+
+# Bad: Too small (many requests)
+response = requests.get("/api/kits", params={"page": 1, "page_size": 2})
+
+# Bad: Exceeds maximum (will be capped at 100)
+response = requests.get("/api/kits", params={"page": 1, "page_size": 500})
+```
+
+## Caching Considerations
+
+Paginated responses are cached for performance. From `fkapi/api.py:603-604,618`:
+
+```python
+cache_key = generate_cache_key("club_kits", club_id, "season", season, "page", page, "page_size", page_size)
+cached_result = cache.get(cache_key)
+# ...
+cache.set(cache_key, kits, timeout=settings.CACHE_TIMEOUT_MEDIUM)
+```
+
+Each page is cached separately, so changing page parameters will result in a new cache lookup.
+
+## Error Handling
+
+### Invalid Page Number
+
+Requesting a page beyond available results returns an empty array:
+
+```bash
+curl "http://localhost:8000/api/kits?page=9999"
+```
+
+**Response:**
+```json
+[]
+```
+
+### Invalid Page Size
+
+Page size above 100 is automatically capped at 100:
+
+```bash
+# Requests 200 items, but receives max 100
+curl "http://localhost:8000/api/kits?page=1&page_size=200"
+```
+
+### Invalid Parameters
+
+Non-numeric or negative values return validation errors:
+
+```bash
+curl "http://localhost:8000/api/kits?page=abc"
+```
+
+**Status Code:** `400 Bad Request`
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="API Overview" icon="book" href="/api/overview">
+    Learn about available API endpoints
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/api/errors">
+    Understand error responses
+  </Card>
+</CardGroup>

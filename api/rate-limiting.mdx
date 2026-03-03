@@ -1,0 +1,363 @@
+---
+title: Rate Limiting
+description: API rate limiting configuration, limits, and error handling
+---
+
+## Overview
+
+The Football Kit Archive API implements rate limiting to protect against abuse and ensure fair usage for all users. Rate limits are applied per IP address and are enforced through middleware.
+
+## Default Rate Limit
+
+By default, the API allows:
+
+- **100 requests per hour** per IP address
+- Rate limit window: **1 hour (3600 seconds)**
+
+From `core/middleware.py:32-38`:
+
+```python
+def _get_limit_from_settings():
+    conf = getattr(settings, "API_RATE_LIMIT", {})
+    rate_str = conf.get("RATE", "100/hour")
+    try:
+        max_requests = int(str(rate_str).split("/")[0])
+    except Exception:
+        max_requests = 100
+```
+
+## Configuration
+
+### Custom Rate Limit
+
+Configure the rate limit in your Django settings:
+
+```python
+# settings.py
+API_RATE_LIMIT = {
+    "RATE": "100/hour",  # Format: "<number>/<period>"
+    "CACHE_PREFIX": "ratelimit"  # Cache key prefix
+}
+```
+
+### Environment Variable
+
+You can also set the rate limit via environment variable:
+
+```bash
+export API_RATE_LIMIT_RATE="200/hour"
+```
+
+### Examples
+
+```python
+# Allow 200 requests per hour
+API_RATE_LIMIT = {"RATE": "200/hour"}
+
+# Allow 1000 requests per hour
+API_RATE_LIMIT = {"RATE": "1000/hour"}
+
+# Allow 50 requests per hour (more restrictive)
+API_RATE_LIMIT = {"RATE": "50/hour"}
+```
+
+## How It Works
+
+### IP-Based Tracking
+
+Rate limits are tracked per client IP address:
+
+```python
+def _get_client_ip(request):
+    """Return client IP safely."""
+    if getattr(settings, "TRUST_X_FORWARDED_FOR", False):
+        xff = request.META.get("HTTP_X_FORWARDED_FOR")
+        if xff:
+            return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
+```
+
+### Cache-Based Storage
+
+Rate limit counters are stored in Django's cache system:
+
+```python
+cache_key = f"{prefix}_{ip}"
+request_data = cache.get(cache_key, {"count": 0, "timestamp": time.time()})
+```
+
+### Rolling Window
+
+The rate limit uses a rolling 1-hour window. The counter resets after 3600 seconds:
+
+```python
+current_time = time.time()
+if current_time - request_data["timestamp"] > 3600:
+    request_data = {"count": 0, "timestamp": current_time}
+```
+
+## Rate Limit Response
+
+When the rate limit is exceeded, the API returns:
+
+**Status Code:** `403 Forbidden`
+
+**Response:**
+```json
+{
+  "detail": "Rate limit exceeded. Please try again later."
+}
+```
+
+From `core/middleware.py:70-71`:
+
+```python
+if request_data["count"] >= max_requests:
+    return HttpResponseForbidden("Rate limit exceeded. Please try again later.")
+```
+
+### Error Response Format
+
+The error handler in `fkapi/api.py:247-248` formats rate limit errors:
+
+```python
+elif isinstance(exc, RateLimitExceededError):
+    return api.create_response(request, {"detail": str(exc)}, status=403)
+```
+
+## Handling Rate Limits
+
+### Exponential Backoff
+
+Implement exponential backoff when rate limited:
+
+```python
+import time
+import requests
+
+def make_request_with_retry(url, max_retries=3):
+    for attempt in range(max_retries):
+        response = requests.get(url)
+        
+        if response.status_code == 403:
+            wait_time = 2 ** attempt  # Exponential backoff
+            print(f"Rate limited. Waiting {wait_time} seconds...")
+            time.sleep(wait_time)
+            continue
+        
+        return response
+    
+    raise Exception("Max retries exceeded")
+```
+
+### Check Rate Limit Status
+
+Monitor your usage by tracking response headers (if implemented) or by counting requests:
+
+```python
+import time
+
+class RateLimitedClient:
+    def __init__(self, max_requests=100, window=3600):
+        self.max_requests = max_requests
+        self.window = window
+        self.requests = []
+    
+    def can_make_request(self):
+        now = time.time()
+        # Remove requests older than the window
+        self.requests = [t for t in self.requests if now - t < self.window]
+        return len(self.requests) < self.max_requests
+    
+    def make_request(self, url):
+        if not self.can_make_request():
+            wait_time = self.window - (time.time() - self.requests[0])
+            print(f"Rate limit reached. Wait {wait_time:.0f} seconds")
+            time.sleep(wait_time)
+            self.requests = []
+        
+        response = requests.get(url)
+        self.requests.append(time.time())
+        return response
+```
+
+### JavaScript Example
+
+```javascript
+class RateLimitedAPI {
+  constructor(maxRequests = 100, windowMs = 3600000) {
+    this.maxRequests = maxRequests;
+    this.windowMs = windowMs;
+    this.requests = [];
+  }
+
+  async fetch(url, options = {}) {
+    // Remove old requests
+    const now = Date.now();
+    this.requests = this.requests.filter(t => now - t < this.windowMs);
+
+    // Check limit
+    if (this.requests.length >= this.maxRequests) {
+      const waitTime = this.windowMs - (now - this.requests[0]);
+      console.log(`Rate limit reached. Waiting ${waitTime}ms`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      this.requests = [];
+    }
+
+    // Make request
+    const response = await fetch(url, options);
+    
+    if (response.status === 403) {
+      const error = await response.json();
+      if (error.detail.includes('Rate limit')) {
+        console.log('Rate limited by server. Waiting 60s...');
+        await new Promise(resolve => setTimeout(resolve, 60000));
+        return this.fetch(url, options);
+      }
+    }
+
+    this.requests.push(now);
+    return response;
+  }
+}
+
+// Usage
+const api = new RateLimitedAPI();
+const response = await api.fetch('http://localhost:8000/api/kits/1');
+```
+
+## IP Whitelisting
+
+Exempt specific IP addresses from rate limiting:
+
+```python
+# settings.py
+API_RATE_LIMIT_WHITELIST = [
+    "127.0.0.1",  # Localhost
+    "10.0.0.1",   # Internal IP
+]
+```
+
+From `core/middleware.py:41-44`:
+
+```python
+def _is_ip_whitelisted(ip: str) -> bool:
+    """Check if an IP address is in the rate limit whitelist."""
+    whitelist = getattr(settings, "API_RATE_LIMIT_WHITELIST", [])
+    return ip in whitelist if whitelist else False
+```
+
+Whitelisted IPs bypass rate limiting entirely:
+
+```python
+if _is_ip_whitelisted(ip):
+    response = get_response(request)
+    return response
+```
+
+## Proxy Configuration
+
+### X-Forwarded-For Header
+
+If your API is behind a proxy or load balancer, enable `X-Forwarded-For` header trust:
+
+```python
+# settings.py
+TRUST_X_FORWARDED_FOR = True
+```
+
+<Warning>
+  Only enable `TRUST_X_FORWARDED_FOR` if your API is behind a trusted proxy. Otherwise, clients can spoof their IP address.
+</Warning>
+
+## Testing Rate Limits
+
+### Simple Test Script
+
+```bash
+#!/bin/bash
+
+# Test rate limiting
+for i in {1..105}; do
+  echo "Request $i:"
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    http://localhost:8000/api/health
+  sleep 0.1
+done
+```
+
+### Python Test Script
+
+```python
+import requests
+import time
+
+url = "http://localhost:8000/api/health"
+
+for i in range(1, 105):
+    response = requests.get(url)
+    print(f"Request {i}: {response.status_code}")
+    
+    if response.status_code == 403:
+        print(f"Rate limited after {i} requests")
+        print(response.json())
+        break
+    
+    time.sleep(0.1)
+```
+
+## Best Practices
+
+### For API Consumers
+
+1. **Implement Retry Logic**: Use exponential backoff when rate limited
+2. **Track Your Usage**: Monitor request counts to avoid hitting limits
+3. **Batch Requests**: Use bulk endpoints when available (e.g., `/api/kits/bulk`)
+4. **Cache Responses**: Cache API responses locally to reduce request volume
+5. **Handle 403 Errors**: Always check for rate limit errors and wait before retrying
+
+### For API Administrators
+
+1. **Monitor Usage**: Track API metrics to identify abuse patterns
+2. **Adjust Limits**: Increase limits for trusted users or applications
+3. **Use Whitelisting**: Exempt internal services from rate limiting
+4. **Set Up Alerts**: Get notified when users hit rate limits frequently
+5. **Document Limits**: Clearly communicate rate limits to API users
+
+## Monitoring Rate Limit Usage
+
+Check API metrics to see rate limit statistics:
+
+```bash
+curl http://localhost:8000/api/metrics
+```
+
+**Response:**
+```json
+{
+  "endpoints": {
+    "GET /api/kits": {
+      "count": 150,
+      "avg_duration": 0.234,
+      "avg_queries": 3.2,
+      "status_codes": {
+        "200": 148,
+        "403": 2
+      }
+    }
+  }
+}
+```
+
+The `403` status codes indicate rate limit violations.
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/api/errors">
+    Learn how to handle rate limit errors
+  </Card>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Combine rate limiting with API authentication
+  </Card>
+</CardGroup>

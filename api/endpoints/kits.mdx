@@ -1,0 +1,414 @@
+---
+title: "Kits Endpoints"
+description: "Retrieve, search, and filter football kit information"
+---
+
+## List Kits
+
+<RequestExample>
+```bash GET /api/kits
+curl -X GET "https://your-domain.com/api/kits?club=1&primary_color=Red&page=1&page_size=20" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve kits with advanced filtering options including club, season, country, colors, design, and year filters.
+
+### Query Parameters
+
+#### Basic Filters
+
+<ParamField query="club" type="integer">
+  Filter kits by club ID
+</ParamField>
+
+<ParamField query="season" type="integer">
+  Filter kits by season ID
+</ParamField>
+
+<ParamField query="country" type="string">
+  Filter kits by club country using ISO 2-letter code (e.g., "ES", "GB", "FR")
+</ParamField>
+
+#### Color Filters
+
+<ParamField query="primary_color" type="string">
+  Filter by primary color. Available options: White, Red, Blue, Black, Yellow, Green, Sky blue, Navy, Orange, Gray, Claret, Purple, Pink, Brown, Gold, Silver, Off-white
+</ParamField>
+
+<ParamField query="secondary_color" type="array">
+  Filter by secondary color(s). Can specify multiple values. Available options: White, Red, Blue, Black, Yellow, Green, Sky blue, Navy, Orange, Gray, Claret, Purple, Pink, Brown, Gold, Silver, Off-white
+</ParamField>
+
+#### Design Filter
+
+<ParamField query="design" type="string">
+  Filter by design pattern. Available options: Plain, Stripes, Graphic, Chest band, Contrasting sleeves, Pinstripes, Hoops, Single stripe, Half-and-half, Sash, Chevron, Checkers, Gradient, Diagonal, Cross, Quarters
+</ParamField>
+
+#### Year/Season Filters
+
+<ParamField query="year" type="integer">
+  Filter by year. Searches in both first_year and second_year of seasons (e.g., 2024 matches "2024-25" and "2023-24")
+</ParamField>
+
+<ParamField query="first_year" type="integer">
+  Filter by season first year (e.g., 2024 for "2024-25")
+</ParamField>
+
+<ParamField query="second_year" type="integer">
+  Filter by season second year (e.g., 2025 for "2024-25"). Use with first_year for exact season match
+</ParamField>
+
+#### Pagination
+
+<ParamField query="page" type="integer" default="1">
+  Page number (minimum: 1)
+</ParamField>
+
+<ParamField query="page_size" type="integer" default="20">
+  Number of items per page (minimum: 1, maximum: 100)
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the kit
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Full name of the kit
+</ResponseField>
+
+<ResponseField name="main_img_url" type="string">
+  URL to the main image of the kit
+</ResponseField>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "id": 1001,
+    "name": "Manchester United 2024-25 Home Kit",
+    "main_img_url": "https://www.footballkitarchive.com/images/kits/manchester-united-2024-25-home.jpg"
+  },
+  {
+    "id": 1003,
+    "name": "Liverpool 2024-25 Home Kit",
+    "main_img_url": "https://www.footballkitarchive.com/images/kits/liverpool-2024-25-home.jpg"
+  }
+]
+```
+</ResponseExample>
+
+### Examples
+
+<CodeGroup>
+```bash Get all kits
+curl -X GET "https://your-domain.com/api/kits"
+```
+
+```bash Get kits for a specific club
+curl -X GET "https://your-domain.com/api/kits?club=1"
+```
+
+```bash Get kits by primary color
+curl -X GET "https://your-domain.com/api/kits?primary_color=Red"
+```
+
+```bash Get kits by secondary colors
+curl -X GET "https://your-domain.com/api/kits?secondary_color=White&secondary_color=Blue"
+```
+
+```bash Get kits by design
+curl -X GET "https://your-domain.com/api/kits?design=Stripes"
+```
+
+```bash Get kits by year
+curl -X GET "https://your-domain.com/api/kits?year=2024"
+```
+
+```bash Get kits by exact season
+curl -X GET "https://your-domain.com/api/kits?first_year=2024&second_year=2025"
+```
+
+```bash Get kits by country
+curl -X GET "https://your-domain.com/api/kits?country=ES"
+```
+
+```bash Combined filters
+curl -X GET "https://your-domain.com/api/kits?primary_color=Red&year=2024&country=ES&design=Stripes"
+```
+</CodeGroup>
+
+<Note>
+Results are cached for optimal performance and sorted by ID in descending order.
+</Note>
+
+## Get Kit by ID
+
+<RequestExample>
+```bash GET /api/kits/{kit_id}
+curl -X GET "https://your-domain.com/api/kits/1001" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve comprehensive information about a specific kit by its ID, including team, season, competition, brand, colors, and design details.
+
+### Path Parameters
+
+<ParamField path="kit_id" type="integer" required>
+  The unique identifier of the kit
+</ParamField>
+
+### Response
+
+<ResponseField name="name" type="string">
+  Full name of the kit
+</ResponseField>
+
+<ResponseField name="slug" type="string">
+  URL-friendly slug for the kit
+</ResponseField>
+
+<ResponseField name="team" type="object">
+  Club information
+</ResponseField>
+
+<ResponseField name="team.id" type="integer">
+  Club ID
+</ResponseField>
+
+<ResponseField name="team.id_fka" type="integer">
+  Football Kit Archive internal club ID
+</ResponseField>
+
+<ResponseField name="team.name" type="string">
+  Club name
+</ResponseField>
+
+<ResponseField name="team.slug" type="string">
+  Club slug
+</ResponseField>
+
+<ResponseField name="team.logo" type="string">
+  URL to club logo
+</ResponseField>
+
+<ResponseField name="team.logo_dark" type="string">
+  URL to club logo (dark theme version)
+</ResponseField>
+
+<ResponseField name="team.country" type="string">
+  ISO 2-letter country code
+</ResponseField>
+
+<ResponseField name="season" type="object">
+  Season information
+</ResponseField>
+
+<ResponseField name="season.id" type="integer">
+  Season ID
+</ResponseField>
+
+<ResponseField name="season.year" type="string">
+  Season year (e.g., "2024-25")
+</ResponseField>
+
+<ResponseField name="season.first_year" type="string">
+  First year of the season (e.g., "2024")
+</ResponseField>
+
+<ResponseField name="season.second_year" type="string">
+  Second year of the season (e.g., "2025"), nullable for single-year seasons
+</ResponseField>
+
+<ResponseField name="competition" type="array">
+  Array of competitions the kit was used in
+</ResponseField>
+
+<ResponseField name="competition[].id" type="integer">
+  Competition ID
+</ResponseField>
+
+<ResponseField name="competition[].name" type="string">
+  Competition name
+</ResponseField>
+
+<ResponseField name="competition[].slug" type="string">
+  Competition slug
+</ResponseField>
+
+<ResponseField name="competition[].logo" type="string">
+  URL to competition logo
+</ResponseField>
+
+<ResponseField name="competition[].logo_dark" type="string">
+  URL to competition logo (dark theme version)
+</ResponseField>
+
+<ResponseField name="competition[].country" type="string">
+  ISO 2-letter country code for the competition
+</ResponseField>
+
+<ResponseField name="type" type="object">
+  Kit type information
+</ResponseField>
+
+<ResponseField name="type.id" type="integer">
+  Kit type ID
+</ResponseField>
+
+<ResponseField name="type.name" type="string">
+  Kit type name (e.g., "Home", "Away", "Third", "Training", "Goalkeeper Home")
+</ResponseField>
+
+<ResponseField name="type.category" type="string">
+  Kit category: "match" (game kits), "prematch" (pre-match, bench, warm-up), "preseason" (pre-season, temporary), "training" (training kits), "travel" (travel/polo kits), "jacket" (anthem, rain, windbreaker, etc.)
+</ResponseField>
+
+<ResponseField name="type.category_order" type="integer">
+  Order of category for sorting (1-6, lower = higher priority)
+</ResponseField>
+
+<ResponseField name="type.order_priority" type="integer">
+  Priority within category for sorting (lower = higher priority)
+</ResponseField>
+
+<ResponseField name="type.is_goalkeeper" type="boolean">
+  Whether this is a goalkeeper kit
+</ResponseField>
+
+<ResponseField name="brand" type="object">
+  Brand information
+</ResponseField>
+
+<ResponseField name="brand.id" type="integer">
+  Brand ID
+</ResponseField>
+
+<ResponseField name="brand.name" type="string">
+  Brand name (e.g., "Adidas", "Nike", "Puma")
+</ResponseField>
+
+<ResponseField name="brand.slug" type="string">
+  Brand slug
+</ResponseField>
+
+<ResponseField name="brand.logo" type="string">
+  URL to brand logo
+</ResponseField>
+
+<ResponseField name="brand.logo_dark" type="string">
+  URL to brand logo (dark theme version)
+</ResponseField>
+
+<ResponseField name="design" type="string">
+  Design pattern of the kit
+</ResponseField>
+
+<ResponseField name="primary_color" type="object">
+  Primary color of the kit
+</ResponseField>
+
+<ResponseField name="primary_color.name" type="string">
+  Color name
+</ResponseField>
+
+<ResponseField name="primary_color.color" type="string">
+  Hex color code (e.g., "#FF0000")
+</ResponseField>
+
+<ResponseField name="secondary_color" type="array">
+  Array of secondary colors
+</ResponseField>
+
+<ResponseField name="secondary_color[].name" type="string">
+  Color name
+</ResponseField>
+
+<ResponseField name="secondary_color[].color" type="string">
+  Hex color code
+</ResponseField>
+
+<ResponseField name="main_img_url" type="string">
+  URL to the main image of the kit
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "name": "Manchester United 2024-25 Home Kit",
+  "slug": "manchester-united-2024-25-home-kit",
+  "team": {
+    "id": 1,
+    "id_fka": 1001,
+    "name": "Manchester United",
+    "slug": "manchester-united-kits",
+    "logo": "https://www.footballkitarchive.com/images/logos/clubs/manchester-united.png",
+    "logo_dark": "https://www.footballkitarchive.com/images/logos/clubs/manchester-united-dark.png",
+    "country": "GB"
+  },
+  "season": {
+    "id": 123,
+    "year": "2024-25",
+    "first_year": "2024",
+    "second_year": "2025"
+  },
+  "competition": [
+    {
+      "id": 1,
+      "name": "Premier League",
+      "slug": "premier-league-kits",
+      "logo": "https://www.footballkitarchive.com/images/logos/competitions/premier-league.png",
+      "logo_dark": "https://www.footballkitarchive.com/images/logos/competitions/premier-league-dark.png",
+      "country": "GB"
+    },
+    {
+      "id": 5,
+      "name": "UEFA Champions League",
+      "slug": "uefa-champions-league-kits",
+      "logo": "https://www.footballkitarchive.com/images/logos/competitions/ucl.png",
+      "logo_dark": "https://www.footballkitarchive.com/images/logos/competitions/ucl-dark.png",
+      "country": null
+    }
+  ],
+  "type": {
+    "id": 1,
+    "name": "Home",
+    "category": "match",
+    "category_order": 1,
+    "order_priority": 1,
+    "is_goalkeeper": false
+  },
+  "brand": {
+    "id": 1,
+    "name": "Adidas",
+    "slug": "adidas-kits",
+    "logo": "https://www.footballkitarchive.com/images/logos/brands/adidas.png",
+    "logo_dark": "https://www.footballkitarchive.com/images/logos/brands/adidas-dark.png"
+  },
+  "design": "Plain",
+  "primary_color": {
+    "name": "Red",
+    "color": "#DA020E"
+  },
+  "secondary_color": [
+    {
+      "name": "White",
+      "color": "#FFFFFF"
+    },
+    {
+      "name": "Black",
+      "color": "#000000"
+    }
+  ],
+  "main_img_url": "https://www.footballkitarchive.com/images/kits/manchester-united-2024-25-home.jpg"
+}
+```
+</ResponseExample>
+
+<Note>
+Results are cached for optimal performance.
+</Note>

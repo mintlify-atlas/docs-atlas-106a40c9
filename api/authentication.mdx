@@ -1,0 +1,230 @@
+---
+title: Authentication
+description: API key authentication configuration and usage
+---
+
+## Overview
+
+The Football Kit Archive API supports optional API key authentication. By default, authentication is **disabled**, making all endpoints publicly accessible. You can enable authentication for production deployments or to restrict access.
+
+## Enabling Authentication
+
+API key authentication is controlled by the `DJANGO_API_ENABLE_AUTH` environment variable.
+
+### Configuration
+
+Set the environment variable to enable authentication:
+
+```bash
+export DJANGO_API_ENABLE_AUTH=True
+```
+
+Accepted values for enabling authentication:
+- `True`
+- `true`
+- `1`
+- `yes`
+
+Any other value (or if the variable is not set) will disable authentication.
+
+### Code Reference
+
+From `fkapi/api.py:89`:
+
+```python
+_api_auth = APIKeyAuth() if os.getenv("DJANGO_API_ENABLE_AUTH", "False").lower() in ("1", "true", "yes") else None
+```
+
+## Using API Keys
+
+When authentication is enabled, you must include your API key in the request header.
+
+### Header Format
+
+```
+X-API-Key: your-api-key-here
+```
+
+### Example Request
+
+```bash
+curl -H "X-API-Key: your-api-key-here" \
+  http://localhost:8000/api/kits/1
+```
+
+### Python Example
+
+```python
+import requests
+
+headers = {
+    "X-API-Key": "your-api-key-here"
+}
+
+response = requests.get(
+    "http://localhost:8000/api/kits/1",
+    headers=headers
+)
+
+print(response.json())
+```
+
+### JavaScript Example
+
+```javascript
+fetch('http://localhost:8000/api/kits/1', {
+  headers: {
+    'X-API-Key': 'your-api-key-here'
+  }
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+
+## Creating API Keys
+
+API keys are managed through the Django admin interface or Django Ninja API Key package.
+
+### Using Django Admin
+
+1. Start your Django server
+2. Navigate to the admin interface: `http://localhost:8000/admin/`
+3. Log in with superuser credentials
+4. Go to the **API Keys** section
+5. Click **Add API Key**
+6. Enter a name and save
+7. Copy the generated API key (it won't be shown again)
+
+### Using Django Shell
+
+```python
+python manage.py shell
+
+# Create an API key
+from ninja_apikey.models import APIKey
+
+api_key = APIKey.objects.create(name="My Application")
+print(f"API Key: {api_key.key}")
+```
+
+## Public Endpoints
+
+Some endpoints remain public even when authentication is enabled:
+
+### Health Check
+
+The health check endpoint is always public:
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+From `fkapi/api.py:271`:
+
+```python
+@api.get(
+    "/health",
+    auth=None,  # Public endpoint, no authentication required
+    ...
+)
+```
+
+## Authentication Errors
+
+### Missing API Key
+
+When authentication is enabled and no API key is provided:
+
+**Status Code:** `401 Unauthorized`
+
+**Response:**
+```json
+{
+  "detail": "Missing or invalid API key"
+}
+```
+
+### Invalid API Key
+
+When an invalid or expired API key is provided:
+
+**Status Code:** `401 Unauthorized`
+
+**Response:**
+```json
+{
+  "detail": "Invalid API key"
+}
+```
+
+### Example with Error
+
+```bash
+curl http://localhost:8000/api/kits/1
+# Returns 401 if authentication is enabled
+```
+
+## Best Practices
+
+<Warning>
+  Never commit API keys to version control or share them publicly. Use environment variables or secure secret management systems.
+</Warning>
+
+### Security Recommendations
+
+1. **Rotate Keys Regularly**: Create new API keys periodically and revoke old ones
+2. **Use Environment Variables**: Store API keys in environment variables, not in code
+3. **Limit Scope**: Create separate API keys for different applications or environments
+4. **Monitor Usage**: Track API key usage through logs and metrics
+5. **HTTPS Only**: Always use HTTPS in production to prevent key interception
+
+### Environment Variables
+
+```bash
+# .env file (never commit this!)
+API_KEY=your-api-key-here
+```
+
+```python
+import os
+import requests
+
+api_key = os.getenv('API_KEY')
+headers = {'X-API-Key': api_key}
+
+response = requests.get(
+    'http://localhost:8000/api/kits/1',
+    headers=headers
+)
+```
+
+## Testing Authentication
+
+### Verify Authentication is Disabled
+
+```bash
+# Should work without API key
+curl http://localhost:8000/api/kits/1
+```
+
+### Verify Authentication is Enabled
+
+```bash
+# Should return 401
+curl http://localhost:8000/api/kits/1
+
+# Should work with valid API key
+curl -H "X-API-Key: your-api-key-here" \
+  http://localhost:8000/api/kits/1
+```
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Rate Limiting" icon="gauge" href="/api/rate-limiting">
+    Learn about API rate limits and quotas
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/api/errors">
+    Understand authentication error responses
+  </Card>
+</CardGroup>

@@ -1,0 +1,189 @@
+---
+title: "Seasons Endpoints"
+description: "Search and retrieve football season information"
+---
+
+## Get Club Seasons
+
+<RequestExample>
+```bash GET /api/seasons
+curl -X GET "https://your-domain.com/api/seasons?id=1" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve all available seasons for a specific club. Returns seasons sorted by year in descending order (most recent first).
+
+### Query Parameters
+
+<ParamField query="id" type="integer" required>
+  Club ID to retrieve seasons for
+</ParamField>
+
+### Response
+
+Returns an array of seasons for the club.
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the season
+</ResponseField>
+
+<ResponseField name="year" type="string">
+  Season year in format "YYYY" or "YYYY-YY" (e.g., "2024" or "2024-25")
+</ResponseField>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "id": 123,
+    "year": "2024-25"
+  },
+  {
+    "id": 122,
+    "year": "2023-24"
+  },
+  {
+    "id": 121,
+    "year": "2022-23"
+  },
+  {
+    "id": 120,
+    "year": "2021-22"
+  }
+]
+```
+</ResponseExample>
+
+<Note>
+This endpoint is cached for optimal performance. Results include only seasons where the club has available kits.
+</Note>
+
+## Search Seasons
+
+<RequestExample>
+```bash GET /api/seasons/search
+curl -X GET "https://your-domain.com/api/seasons/search?keyword=2025" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Search for seasons by year with support for partial year matching. Returns up to 10 matching seasons sorted by relevance and year.
+
+### Query Parameters
+
+<ParamField query="keyword" type="string" required>
+  Year or partial year to search for. Supports various formats:
+  - Full year: "2025" (matches "2025", "2024-25", "2025-26")
+  - Partial year with dash: "2025-" (matches "2024-25", "2025-26")
+  - Full season: "2020-21" (matches exactly "2020-21")
+  - Two-digit year: "97" (matches "1997", "1996-97")
+</ParamField>
+
+### Response
+
+Returns an array of up to 10 matching seasons.
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the season
+</ResponseField>
+
+<ResponseField name="year" type="string">
+  Season year in format "YYYY" or "YYYY-YY"
+</ResponseField>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "id": 150,
+    "year": "2025"
+  },
+  {
+    "id": 123,
+    "year": "2025-26"
+  },
+  {
+    "id": 122,
+    "year": "2024-25"
+  }
+]
+```
+</ResponseExample>
+
+### Search Priority
+
+Results are ordered by relevance:
+
+1. **Exact match** - "2025" matches "2025"
+2. **Starts with keyword** - "2025" matches "2025-26" (first_year matches)
+3. **Ends with keyword** - "2025" matches "2024-25" (second_year matches)
+4. **Contains keyword** - "2025" matches "2025-27" (in first_year or second_year)
+
+For 2-digit years (e.g., "97"):
+- Priority 2: first_year ends with "97" (e.g., "1997")
+- Priority 3: second_year ends with "97" (e.g., "1996-97")
+
+### Examples
+
+<CodeGroup>
+```bash Search for 2025
+curl -X GET "https://your-domain.com/api/seasons/search?keyword=2025"
+# Returns: "2025", "2025-26", "2024-25"
+```
+
+```bash Search with trailing dash
+curl -X GET "https://your-domain.com/api/seasons/search?keyword=2025-"
+# Returns: "2024-25", "2025-26"
+```
+
+```bash Search for exact season
+curl -X GET "https://your-domain.com/api/seasons/search?keyword=2020-21"
+# Returns: "2020-21"
+```
+
+```bash Search with 2-digit year
+curl -X GET "https://your-domain.com/api/seasons/search?keyword=97"
+# Returns: "1997", "1996-97", etc.
+```
+</CodeGroup>
+
+<Note>
+Results are cached for optimal performance and limited to 10 matches.
+</Note>
+
+## Get Season by ID
+
+<RequestExample>
+```bash GET /api/seasons/{season_id}
+curl -X GET "https://your-domain.com/api/seasons/123" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve detailed information about a specific season by its ID.
+
+### Path Parameters
+
+<ParamField path="season_id" type="integer" required>
+  The unique identifier of the season
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the season
+</ResponseField>
+
+<ResponseField name="year" type="string">
+  Season year in format "YYYY" or "YYYY-YY"
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "id": 123,
+  "year": "2024-25"
+}
+```
+</ResponseExample>

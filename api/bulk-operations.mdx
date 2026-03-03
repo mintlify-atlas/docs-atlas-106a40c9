@@ -1,0 +1,513 @@
+---
+title: 'Bulk Operations'
+description: 'Efficiently fetch multiple resources in a single request with bulk endpoints'
+---
+
+## Overview
+
+Bulk operations allow you to retrieve multiple resources in a single API request, reducing the number of HTTP calls and improving performance. Currently, only the **kits** resource supports bulk operations.
+
+<Warning>
+  **Note**: Bulk endpoints for brands and competitions are not currently implemented. Only `/api/kits/bulk` is available.
+</Warning>
+
+## Kits Bulk Endpoint
+
+### GET /api/kits/bulk
+
+**Implementation**: `fkapi/api.py:1312-1407`
+
+Retrieve multiple kits by their slugs or URLs in a single request.
+
+#### Parameters
+
+| Parameter | Type   | Required | Description                          |
+|-----------|--------|----------|--------------------------------------|
+| `slugs`   | string | Yes      | Comma-separated list of kit slugs or URLs |
+
+#### Constraints
+
+- **Minimum**: 2 kits
+- **Maximum**: 30 kits
+- Slugs must be comma-separated
+- Accepts both slugs and full URLs
+
+#### Request Examples
+
+**Using slugs**:
+```bash
+GET /api/kits/bulk?slugs=manchester-united-2024-home,liverpool-2024-away,chelsea-2024-third
+```
+
+**Using URLs**:
+```bash
+GET /api/kits/bulk?slugs=https://www.footballkitarchive.com/manchester-united-2024-home,liverpool-2024-away
+```
+
+**Mixed (slugs and URLs)**:
+```bash
+GET /api/kits/bulk?slugs=https://www.footballkitarchive.com/kit-1,kit-2,kit-3
+```
+
+#### Response Format
+
+The bulk endpoint returns a **reduced response format** optimized for performance, containing only essential fields:
+
+```json
+[
+  {
+    "name": "Manchester United 2024-25 Home Kit",
+    "team": {
+      "name": "Manchester United",
+      "logo": "https://...",
+      "logo_dark": "https://...",
+      "country": "GB"
+    },
+    "season": {
+      "year": "2024-25"
+    },
+    "brand": {
+      "name": "Adidas",
+      "logo": "https://...",
+      "logo_dark": "https://..."
+    },
+    "main_img_url": "https://..."
+  },
+  {
+    "name": "Liverpool 2024-25 Away Kit",
+    "team": {
+      "name": "Liverpool FC",
+      "logo": "https://...",
+      "logo_dark": "https://...",
+      "country": "GB"
+    },
+    "season": {
+      "year": "2024-25"
+    },
+    "brand": {
+      "name": "Nike",
+      "logo": "https://...",
+      "logo_dark": "https://..."
+    },
+    "main_img_url": "https://..."
+  }
+]
+```
+
+#### Response Schema
+
+**KitBulkSchema** (reduced format):
+
+| Field          | Type              | Description                    |
+|----------------|-------------------|--------------------------------|
+| `name`         | string            | Kit name                       |
+| `team`         | ClubBulkSchema    | Team information (reduced)     |
+| `season`       | SeasonBulkSchema  | Season information (reduced)   |
+| `brand`        | BrandBulkSchema   | Brand information (reduced)    |
+| `main_img_url` | string            | Main kit image URL             |
+
+**ClubBulkSchema**:
+
+| Field        | Type   | Description                   |
+|--------------|--------|-------------------------------|
+| `name`       | string | Club name                     |
+| `logo`       | string | Club logo URL                 |
+| `logo_dark`  | string | Dark mode logo URL (nullable) |
+| `country`    | string | ISO 2-letter country code     |
+
+**SeasonBulkSchema**:
+
+| Field  | Type   | Description       |
+|--------|--------|-------------------|
+| `year` | string | Season year       |
+
+**BrandBulkSchema**:
+
+| Field       | Type   | Description                   |
+|-------------|--------|-------------------------------|
+| `name`      | string | Brand name                    |
+| `logo`      | string | Brand logo URL                |
+| `logo_dark` | string | Dark mode logo URL (nullable) |
+
+#### Implementation Details
+
+**URL Slug Extraction** (`fkapi/api.py:1288-1310`):
+
+The endpoint automatically extracts slugs from full URLs:
+
+```python
+def _extract_slug_from_url(url_or_slug: str) -> str:
+    """Extract slug from URL or return slug as-is."""
+    url_or_slug = url_or_slug.strip()
+    
+    if url_or_slug.startswith("http"):
+        # Remove trailing slash and extract last part
+        url_or_slug = url_or_slug.rstrip("/")
+        parts = url_or_slug.split("/")
+        if parts:
+            return parts[-1]
+    
+    return url_or_slug
+```
+
+**Processing Flow** (`fkapi/api.py:1334-1407`):
+
+1. **Parse input**: Split comma-separated slugs
+2. **Clean slugs**: Strip whitespace and extract from URLs
+3. **Validate count**: Ensure 2-30 kits
+4. **Check cache**: Look for cached results
+5. **Fetch kits**: Query database with `slug__in=slug_list`
+6. **Build response**: Map kits to slugs in original order
+7. **Cache results**: Store for 30 minutes
+
+**Query Optimization**:
+```python
+kits = Kit.objects.filter(
+    slug__in=slug_list
+).select_related("team", "season", "brand")
+```
+
+#### Response Order
+
+Results are returned in the **same order as the input slugs**, not database order.
+
+**Example**:
+```bash
+# Request
+GET /api/kits/bulk?slugs=kit-3,kit-1,kit-2
+
+# Response order: kit-3, kit-1, kit-2
+```
+
+If a slug is not found, it's skipped (no error, no placeholder).
+
+#### Validation Errors
+
+**Too few kits**:
+```json
+{
+  "detail": "Minimum 2 kits required"
+}
+```
+HTTP 400 Bad Request
+
+**Too many kits**:
+```json
+{
+  "detail": "Maximum 30 kits allowed"
+}
+```
+HTTP 400 Bad Request
+
+#### Caching
+
+**Cache Key Generation**:
+```python
+from core.cache_utils import generate_cache_key
+
+# Sorted slugs for consistent cache keys
+cache_key = generate_cache_key("kits_bulk", ",".join(sorted(slug_list)))
+```
+
+**Cache Settings**:
+- **TTL**: 30 minutes (`CACHE_TIMEOUT_MEDIUM`)
+- **Backend**: Redis
+- **Key format**: `fkapi:kits_bulk_{sorted_slugs_hash}`
+
+**Cache invalidation**: When any Kit model is saved/deleted
+
+## Use Cases
+
+### User Collection Display
+
+Fetch multiple kits for a user's collection page:
+
+```javascript
+const slugs = [
+  'manchester-united-2024-home',
+  'liverpool-2024-away',
+  'barcelona-2024-third'
+];
+
+const response = await fetch(
+  `/api/kits/bulk?slugs=${slugs.join(',')}`
+);
+const kits = await response.json();
+```
+
+### Comparison View
+
+Load multiple kits for side-by-side comparison:
+
+```bash
+curl "https://api.example.com/api/kits/bulk?slugs=kit1,kit2,kit3,kit4"
+```
+
+### Batch Updates
+
+Fetch kit details before performing batch operations:
+
+```python
+import requests
+
+slugs = ["kit-1", "kit-2", "kit-3"]
+url = f"https://api.example.com/api/kits/bulk?slugs={','.join(slugs)}"
+response = requests.get(url)
+kits = response.json()
+
+for kit in kits:
+    print(f"Processing {kit['name']}...")
+```
+
+### Related Kits Widget
+
+Show related kits (same team, different seasons):
+
+```javascript
+const relatedSlugs = [
+  'arsenal-2022-home',
+  'arsenal-2023-home',
+  'arsenal-2024-home'
+];
+
+fetch(`/api/kits/bulk?slugs=${relatedSlugs.join(',')}`)
+  .then(res => res.json())
+  .then(kits => displayRelatedKits(kits));
+```
+
+## Performance Benefits
+
+### Network Efficiency
+
+**Without bulk endpoint** (10 kits):
+- 10 separate HTTP requests
+- 10 × connection overhead
+- ~10 × latency
+
+**With bulk endpoint** (10 kits):
+- 1 HTTP request
+- 1 × connection overhead
+- 1 × latency
+
+### Database Optimization
+
+Bulk operations use a single optimized query:
+
+```python
+# Single query with IN clause
+Kit.objects.filter(slug__in=slug_list).select_related(...)
+
+# vs. 30 individual queries
+Kit.objects.get(slug=slug1)
+Kit.objects.get(slug=slug2)
+# ...
+```
+
+### Cache Efficiency
+
+- One cache lookup instead of multiple
+- Reduced Redis connections
+- Lower cache key overhead
+
+## Comparison: Bulk vs Individual
+
+### Individual Kit Endpoint
+
+**GET /api/kits/{kit_id}**
+
+**Response includes**:
+- Complete kit details (ID, name, slug)
+- Full team information (ID, name, slug, logos, country)
+- Complete season details (ID, year, first_year, second_year)
+- Full competition list
+- Detailed kit type (category, order, goalkeeper flag)
+- Complete brand information
+- Design and color details
+- Image URLs
+- Ratings and additional metadata
+
+**When to use**:
+- Single kit detail page
+- Need complete information
+- Need competition details
+- Need color/design analysis
+
+### Bulk Kit Endpoint
+
+**GET /api/kits/bulk?slugs=...**
+
+**Response includes**:
+- Kit name
+- Team name and logos
+- Season year only
+- Brand name and logos
+- Main image URL
+
+**When to use**:
+- Multiple kits at once
+- Collection/gallery views
+- List/preview displays
+- Performance-critical scenarios
+
+## Future Enhancements
+
+<Info>
+  These features are not currently implemented but may be added in future versions:
+</Info>
+
+### Brands Bulk Endpoint
+
+```bash
+# Proposed
+GET /api/brands/bulk?slugs=adidas,nike,puma,umbro
+```
+
+**Expected response**:
+```json
+[
+  {
+    "name": "Adidas",
+    "logo": "https://...",
+    "logo_dark": "https://..."
+  }
+]
+```
+
+### Competitions Bulk Endpoint
+
+```bash
+# Proposed
+GET /api/competitions/bulk?slugs=premier-league,la-liga,serie-a
+```
+
+**Expected response**:
+```json
+[
+  {
+    "name": "Premier League",
+    "logo": "https://...",
+    "logo_dark": "https://...",
+    "country": "GB"
+  }
+]
+```
+
+### Advanced Bulk Options
+
+**Proposed query parameters**:
+- `fields` - Select specific fields to return
+- `include` - Include related resources
+- `format` - Response format (compact/full)
+
+**Example**:
+```bash
+GET /api/kits/bulk?slugs=kit1,kit2&fields=name,team,brand&include=colors
+```
+
+## Error Handling
+
+### Missing Kits
+
+If some slugs don't exist, they're silently skipped:
+
+```bash
+# Request 3 kits, only 2 exist
+GET /api/kits/bulk?slugs=valid-kit-1,invalid-kit,valid-kit-2
+
+# Response contains only 2 kits
+[
+  { "name": "Valid Kit 1", ... },
+  { "name": "Valid Kit 2", ... }
+]
+```
+
+### Invalid Input
+
+**Empty slugs**:
+```bash
+GET /api/kits/bulk?slugs=
+# Error: Minimum 2 kits required
+```
+
+**Single kit**:
+```bash
+GET /api/kits/bulk?slugs=only-one-kit
+# Error: Minimum 2 kits required
+```
+
+**Too many kits**:
+```bash
+GET /api/kits/bulk?slugs=kit1,kit2,...,kit31
+# Error: Maximum 30 kits allowed
+```
+
+## Best Practices
+
+### Optimal Batch Size
+
+- **Recommended**: 5-15 kits per request
+- **Maximum**: 30 kits
+- **Avoid**: Requesting 2-3 kits (minimal benefit)
+
+### Slug Management
+
+**Clean slugs before sending**:
+```javascript
+const slugs = rawSlugs
+  .map(s => s.trim())
+  .filter(s => s.length > 0)
+  .slice(0, 30); // Enforce limit
+
+const url = `/api/kits/bulk?slugs=${slugs.join(',')}`;
+```
+
+### Error Handling
+
+```javascript
+const fetchBulkKits = async (slugs) => {
+  if (slugs.length < 2) {
+    throw new Error('Minimum 2 kits required');
+  }
+  if (slugs.length > 30) {
+    throw new Error('Maximum 30 kits allowed');
+  }
+  
+  const response = await fetch(
+    `/api/kits/bulk?slugs=${slugs.join(',')}`
+  );
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch kits');
+  }
+  
+  return response.json();
+};
+```
+
+### Fallback Strategy
+
+```javascript
+const fetchKits = async (slugs) => {
+  // Try bulk first
+  if (slugs.length >= 2 && slugs.length <= 30) {
+    try {
+      return await fetchBulkKits(slugs);
+    } catch (error) {
+      console.warn('Bulk fetch failed, falling back to individual requests');
+    }
+  }
+  
+  // Fallback to individual requests
+  const promises = slugs.map(slug => 
+    fetch(`/api/kits?slug=${slug}`).then(r => r.json())
+  );
+  return Promise.all(promises);
+};
+```
+
+## Related Documentation
+
+- [Search Functionality](/api/search) - Find kits before fetching in bulk
+- [Caching Strategy](/api/caching-strategy) - How bulk results are cached
+- [API Overview](/api/overview) - Complete endpoint documentation

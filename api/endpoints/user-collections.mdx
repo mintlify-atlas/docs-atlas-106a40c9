@@ -1,0 +1,488 @@
+---
+title: "User Collections"
+description: "Scrape and retrieve user kit collections from FootballKitArchive"
+---
+
+## Overview
+
+The User Collections endpoints allow you to scrape and retrieve a user's kit collection from FootballKitArchive. Collections are cached for 1 week after scraping.
+
+<Note>
+User collections can contain large amounts of data. The API supports pagination to efficiently retrieve collection data.
+</Note>
+
+## Scrape User Collection
+
+<RequestExample>
+```bash POST /api/user-collection/{userid}/scrape
+curl -X POST "https://your-domain.com/api/user-collection/148184/scrape" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Start asynchronous scraping of a user's collection from FootballKitArchive. If the collection is already cached, returns data immediately.
+
+### Path Parameters
+
+<ParamField path="userid" type="integer" required>
+  User ID from FootballKitArchive (found in the user's profile URL)
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="force" type="boolean" default="false">
+  Force a fresh scrape by invalidating existing cache. Useful for getting updated collection data.
+</ParamField>
+
+### Response Codes
+
+- **200 OK** - Collection found in cache, data returned immediately
+- **202 Accepted** - Scraping started, use task_id to check status
+
+### Response (200 OK - Cached)
+
+<ResponseField name="status" type="string">
+  Status of the response: "cached"
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Collection data object
+</ResponseField>
+
+<ResponseField name="data.success" type="boolean">
+  Whether the scraping was successful
+</ResponseField>
+
+<ResponseField name="data.entries" type="array">
+  Array of kit entries in the collection
+</ResponseField>
+
+<ResponseField name="data.total_entries" type="integer">
+  Total number of kits in the collection
+</ResponseField>
+
+<ResponseField name="data.pages_scraped" type="integer">
+  Number of pages scraped from FootballKitArchive
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Pagination information
+</ResponseField>
+
+<ResponseExample>
+```json 200 OK - Cached
+{
+  "status": "cached",
+  "data": {
+    "success": true,
+    "entries": [
+      {
+        "kit_id": 12345,
+        "kit_name": "Manchester United 2024-25 Home Kit",
+        "kit_slug": "manchester-united-2024-25-home-kit",
+        "team_name": "Manchester United",
+        "season_year": "2024-25",
+        "main_img_url": "https://www.footballkitarchive.com/images/kits/..."
+      }
+    ],
+    "total_entries": 150,
+    "pages_scraped": 8
+  },
+  "pagination": {
+    "total_count": 150,
+    "note": "Use GET /api/user-collection/148184?page=1&page_size=20 for paginated results"
+  }
+}
+```
+</ResponseExample>
+
+### Response (202 Accepted - Processing)
+
+<ResponseField name="status" type="string">
+  Status of the response: "processing"
+</ResponseField>
+
+<ResponseField name="task_id" type="string">
+  Celery task ID for tracking the scraping job
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Instructions for checking status
+</ResponseField>
+
+<ResponseExample>
+```json 202 Accepted - Processing
+{
+  "status": "processing",
+  "task_id": "abc123-def456-ghi789",
+  "message": "Scraping started. Check status in 60 seconds by calling GET /api/user-collection/148184"
+}
+```
+</ResponseExample>
+
+### Usage Flow
+
+1. **POST** `/api/user-collection/{userid}/scrape` to start scraping
+2. If you receive **202 Accepted**, wait approximately 60 seconds (scraping time depends on collection size)
+3. **GET** `/api/user-collection/{userid}` to retrieve paginated data
+
+<Tip>
+For large collections (500+ kits), scraping may take 2-3 minutes. The API respects rate limits to avoid overloading FootballKitArchive servers.
+</Tip>
+
+## Get User Collection
+
+<RequestExample>
+```bash GET /api/user-collection/{userid}
+curl -X GET "https://your-domain.com/api/user-collection/148184?page=1&page_size=20" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Get a user's collection from cache with pagination. Collection must be scraped first using the POST endpoint.
+
+### Path Parameters
+
+<ParamField path="userid" type="integer" required>
+  User ID from FootballKitArchive
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="page" type="integer" default="1">
+  Page number for pagination (minimum: 1)
+</ParamField>
+
+<ParamField query="page_size" type="integer" default="20">
+  Number of items per page (minimum: 1, maximum: 100)
+</ParamField>
+
+### Response Codes
+
+- **200 OK** - Collection found in cache, returns paginated data
+- **404 Not Found** - Collection not found, suggest starting scraping first
+
+### Response (200 OK)
+
+<ResponseField name="status" type="string">
+  Status of the response: "ready"
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Collection data object
+</ResponseField>
+
+<ResponseField name="data.success" type="boolean">
+  Whether the scraping was successful
+</ResponseField>
+
+<ResponseField name="data.entries" type="array">
+  Array of kit entries for the current page
+</ResponseField>
+
+<ResponseField name="data.entries[].kit_id" type="integer">
+  Kit ID
+</ResponseField>
+
+<ResponseField name="data.entries[].kit_name" type="string">
+  Full name of the kit
+</ResponseField>
+
+<ResponseField name="data.entries[].kit_slug" type="string">
+  URL-friendly slug for the kit
+</ResponseField>
+
+<ResponseField name="data.entries[].team_name" type="string">
+  Club/team name
+</ResponseField>
+
+<ResponseField name="data.entries[].season_year" type="string">
+  Season year
+</ResponseField>
+
+<ResponseField name="data.entries[].main_img_url" type="string">
+  URL to the kit image
+</ResponseField>
+
+<ResponseField name="data.total_entries" type="integer">
+  Total number of kits in the collection
+</ResponseField>
+
+<ResponseField name="data.pages_scraped" type="integer">
+  Number of pages scraped from FootballKitArchive
+</ResponseField>
+
+<ResponseField name="data.user" type="object">
+  User information (if available from scraping)
+</ResponseField>
+
+<ResponseField name="data.user.name" type="string">
+  User's display name
+</ResponseField>
+
+<ResponseField name="data.user.image" type="string">
+  URL to user's profile image
+</ResponseField>
+
+<ResponseField name="data.user.twitter" type="string">
+  Twitter handle
+</ResponseField>
+
+<ResponseField name="data.user.instagram" type="string">
+  Instagram handle
+</ResponseField>
+
+<ResponseField name="data.user.description" type="string">
+  User's profile description
+</ResponseField>
+
+<ResponseField name="data.user.points" type="integer">
+  User's points on FootballKitArchive
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Pagination information
+</ResponseField>
+
+<ResponseField name="pagination.current_page" type="integer">
+  Current page number
+</ResponseField>
+
+<ResponseField name="pagination.total_pages" type="integer">
+  Total number of pages
+</ResponseField>
+
+<ResponseField name="pagination.total_count" type="integer">
+  Total number of kits
+</ResponseField>
+
+<ResponseField name="pagination.page_size" type="integer">
+  Number of items per page
+</ResponseField>
+
+<ResponseField name="pagination.has_next" type="boolean">
+  Whether there is a next page
+</ResponseField>
+
+<ResponseField name="pagination.has_previous" type="boolean">
+  Whether there is a previous page
+</ResponseField>
+
+<ResponseField name="pagination.next_page" type="integer">
+  Next page number (null if no next page)
+</ResponseField>
+
+<ResponseField name="pagination.previous_page" type="integer">
+  Previous page number (null if no previous page)
+</ResponseField>
+
+<ResponseField name="cached_until" type="string">
+  ISO 8601 timestamp indicating when the cache expires
+</ResponseField>
+
+<ResponseExample>
+```json 200 OK - Ready
+{
+  "status": "ready",
+  "data": {
+    "success": true,
+    "entries": [
+      {
+        "kit_id": 12345,
+        "kit_name": "Manchester United 2024-25 Home Kit",
+        "kit_slug": "manchester-united-2024-25-home-kit",
+        "team_name": "Manchester United",
+        "season_year": "2024-25",
+        "main_img_url": "https://www.footballkitarchive.com/images/kits/manchester-united-2024-25-home.jpg"
+      },
+      {
+        "kit_id": 12346,
+        "kit_name": "Liverpool 2024-25 Away Kit",
+        "kit_slug": "liverpool-2024-25-away-kit",
+        "team_name": "Liverpool",
+        "season_year": "2024-25",
+        "main_img_url": "https://www.footballkitarchive.com/images/kits/liverpool-2024-25-away.jpg"
+      }
+    ],
+    "total_entries": 150,
+    "pages_scraped": 8,
+    "user": {
+      "name": "John Doe",
+      "image": "https://www.footballkitarchive.com/images/users/12345.jpg",
+      "twitter": "johndoe",
+      "instagram": "johndoe",
+      "description": "Kit collector since 2010",
+      "points": 1250
+    }
+  },
+  "pagination": {
+    "current_page": 1,
+    "total_pages": 8,
+    "total_count": 150,
+    "page_size": 20,
+    "has_next": true,
+    "has_previous": false,
+    "next_page": 2,
+    "previous_page": null
+  },
+  "cached_until": "2026-03-10T12:00:00"
+}
+```
+</ResponseExample>
+
+### Response (404 Not Found)
+
+<ResponseField name="status" type="string">
+  Status of the response: "not_found"
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Error message with instructions
+</ResponseField>
+
+<ResponseExample>
+```json 404 Not Found
+{
+  "status": "not_found",
+  "message": "Collection not found for userid 148184. Call POST /api/user-collection/148184/scrape first to start scraping."
+}
+```
+</ResponseExample>
+
+## Complete Example Workflow
+
+<CodeGroup>
+```python Python
+import requests
+import time
+
+BASE_URL = "https://your-domain.com/api"
+API_KEY = "your-api-key-here"
+headers = {"X-API-Key": API_KEY}
+
+# Step 1: Start scraping
+userid = 148184
+response = requests.post(
+    f"{BASE_URL}/user-collection/{userid}/scrape",
+    headers=headers
+)
+result = response.json()
+print(f"Scrape status: {result['status']}")
+
+# Step 2: Wait if processing
+if result.get('status') == 'processing':
+    print(f"Task ID: {result['task_id']}")
+    print("Waiting 60 seconds for scraping to complete...")
+    time.sleep(60)
+
+# Step 3: Get paginated collection
+response = requests.get(
+    f"{BASE_URL}/user-collection/{userid}",
+    params={"page": 1, "page_size": 20},
+    headers=headers
+)
+collection = response.json()
+
+print(f"Total kits: {collection['data']['total_entries']}")
+print(f"Page {collection['pagination']['current_page']} of {collection['pagination']['total_pages']}")
+
+for kit in collection['data']['entries']:
+    print(f"- {kit['kit_name']}")
+```
+
+```javascript JavaScript
+const BASE_URL = 'https://your-domain.com/api';
+const API_KEY = 'your-api-key-here';
+const headers = { 'X-API-Key': API_KEY };
+
+const userid = 148184;
+
+// Step 1: Start scraping
+const scrapeResponse = await fetch(
+  `${BASE_URL}/user-collection/${userid}/scrape`,
+  { method: 'POST', headers }
+);
+const scrapeResult = await scrapeResponse.json();
+console.log(`Scrape status: ${scrapeResult.status}`);
+
+// Step 2: Wait if processing
+if (scrapeResult.status === 'processing') {
+  console.log(`Task ID: ${scrapeResult.task_id}`);
+  console.log('Waiting 60 seconds...');
+  await new Promise(resolve => setTimeout(resolve, 60000));
+}
+
+// Step 3: Get paginated collection
+const collectionResponse = await fetch(
+  `${BASE_URL}/user-collection/${userid}?page=1&page_size=20`,
+  { headers }
+);
+const collection = await collectionResponse.json();
+
+console.log(`Total kits: ${collection.data.total_entries}`);
+console.log(`Page ${collection.pagination.current_page} of ${collection.pagination.total_pages}`);
+
+collection.data.entries.forEach(kit => {
+  console.log(`- ${kit.kit_name}`);
+});
+```
+
+```bash cURL
+# Step 1: Start scraping
+curl -X POST "https://your-domain.com/api/user-collection/148184/scrape" \
+  -H "X-API-Key: your-api-key-here"
+
+# If response is 202 Accepted, wait ~60 seconds
+
+# Step 2: Get first page of collection
+curl -X GET "https://your-domain.com/api/user-collection/148184?page=1&page_size=20" \
+  -H "X-API-Key: your-api-key-here"
+
+# Step 3: Get next page
+curl -X GET "https://your-domain.com/api/user-collection/148184?page=2&page_size=20" \
+  -H "X-API-Key: your-api-key-here"
+```
+</CodeGroup>
+
+## Force Re-scrape
+
+<RequestExample>
+```bash Force fresh scrape
+curl -X POST "https://your-domain.com/api/user-collection/148184/scrape?force=true" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+To get updated collection data with the latest kits and user information, use the `force=true` parameter. This invalidates the existing cache and performs a fresh scrape.
+
+<Warning>
+Force re-scraping should be used sparingly to avoid unnecessary load on FootballKitArchive servers. Collections are cached for 1 week.
+</Warning>
+
+## Cache Duration
+
+<Note>
+User collections are cached for **1 week (604,800 seconds)** after scraping. After this period, a fresh scrape will be required.
+</Note>
+
+## Finding User IDs
+
+To find a user's ID on FootballKitArchive:
+
+1. Visit the user's profile on FootballKitArchive
+2. Look at the URL: `https://www.footballkitarchive.com/user/{userid}/`
+3. The number in the URL is the user ID
+
+Example: `https://www.footballkitarchive.com/user/148184/` → User ID is `148184`
+
+## Rate Limiting
+
+<Warning>
+The scraping process respects rate limits (minimum 2 seconds between requests) to avoid overloading FootballKitArchive servers. Large collections may take several minutes to scrape.
+</Warning>
+
+## Ethical Considerations
+
+<Note>
+This endpoint is designed for personal use and respects FootballKitArchive's robots.txt and rate limits. Do not abuse this endpoint or scrape excessively.
+</Note>

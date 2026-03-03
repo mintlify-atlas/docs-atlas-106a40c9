@@ -1,0 +1,272 @@
+---
+title: Maintenance Commands
+description: Django management commands for database maintenance and optimization
+---
+
+FKApi includes several maintenance commands to keep your database clean, organized, and optimized.
+
+## categorize_type_k
+
+Analyzes and categorizes all Type_K (kit type) entries for proper search result sorting.
+
+### Usage
+
+```bash
+python manage.py categorize_type_k [options]
+```
+
+### Options
+
+- `--dry-run` - Show what would be changed without saving
+
+### Examples
+
+Preview changes:
+
+```bash
+python manage.py categorize_type_k --dry-run
+```
+
+Apply categorization:
+
+```bash
+python manage.py categorize_type_k
+```
+
+### What It Does
+
+The command assigns each kit type:
+
+- **category** - One of: match, prematch, preseason, training, travel, jacket
+- **category_order** - Number 1-6 based on category priority
+- **is_goalkeeper** - True if contains GK/Goalkeeper/Portero keywords
+- **order_priority** - Priority within category (Home=1, Away=2, Third=3, Fourth=4, etc.)
+
+### Categories
+
+1. **Match** (category_order: 1) - Game kits (Home, Away, Third, Fourth)
+2. **Pre-match** (category_order: 2) - Pre-match, bench, warm-up, staff kits
+3. **Pre-season** (category_order: 3) - Pre-season and temporary kits
+4. **Training** (category_order: 4) - Training kits (excluding jacket types)
+5. **Travel** (category_order: 5) - Travel and polo kits
+6. **Jacket** (category_order: 6) - Anthem, rain, jacket, windbreaker, track, vest
+
+### Output
+
+Displays statistics showing:
+
+- Number of entries updated
+- Count by category (match, prematch, preseason, training, travel, jackets)
+- Total goalkeeper types found
+
+### Notes
+
+- Requires migration to be applied (adds category fields to Type_K model)
+- Uses word boundaries to avoid false positives (e.g., "Training" won't match "rain")
+- Handles numbered variations (V2, V3, etc.) in order priority
+- Safe to run multiple times (idempotent)
+
+## clean_double_slash_urls
+
+Fixes malformed URLs containing double slashes in Brand, Club, Competition, and Kit models.
+
+### Usage
+
+```bash
+python manage.py clean_double_slash_urls [options]
+```
+
+### Options
+
+- `--dry-run` - Only print what would be updated, do not save
+
+### Examples
+
+Preview fixes:
+
+```bash
+python manage.py clean_double_slash_urls --dry-run
+```
+
+Apply fixes:
+
+```bash
+python manage.py clean_double_slash_urls
+```
+
+### What It Fixes
+
+Cleans up URLs like:
+
+```
+https://example.com//static//image.png
+```
+
+Becomes:
+
+```
+https://example.com/static/image.png
+```
+
+### Fields Cleaned
+
+- **Brand**: logo, logo_dark
+- **Club**: logo, logo_dark
+- **Competition**: logo, logo_dark
+- **Kit**: main_img_url, fh_link
+
+### Notes
+
+- Preserves the protocol (https://) while fixing path slashes
+- Uses bulk updates for efficiency
+- Shows detailed output including model, pk, and field changes
+- Safe to run multiple times
+
+## update_last_season
+
+Updates kit photos from recent seasons (2025, 2026, 2025-26) to replace leaked photos with official ones.
+
+### Usage
+
+```bash
+python manage.py update_last_season [options]
+```
+
+### Options
+
+- `--workers` - Number of worker threads (default: 10)
+- `--force` - Force update all kits regardless of last_updated timestamp
+
+### Examples
+
+Update kits not updated in the last 7 days:
+
+```bash
+python manage.py update_last_season
+```
+
+Force update all kits with 20 workers:
+
+```bash
+python manage.py update_last_season --force --workers 20
+```
+
+### What It Does
+
+1. Finds kits from seasons 2025, 2026, and 2025-26
+2. Updates kits that haven't been updated in the last 7 days (unless `--force`)
+3. Orders by oldest kits first (longest since last update)
+4. Uses proxy for all scraping requests
+5. Handles moved pages (404 errors) by checking for duplicates
+6. Retries failed requests up to 5 times
+
+### Progress Tracking
+
+- Updates window title with progress percentage
+- Displays real-time status messages
+- Creates error logs for failed updates
+
+### Error Handling
+
+The command tracks different error types:
+
+- **Moved pages**: Kit URL changed (checks for duplicates and removes old entry)
+- **Network errors**: Temporary connection issues (suggests rerunning)
+- **Other errors**: Unexpected failures
+
+### Logs Created
+
+- `update_last_season_errors.log` - All errors with timestamps
+- `moved_kits.log` - Moved kits with potential duplicates
+- `moved_kits_no_duplicates.log` - Moved kits without duplicates (manual review needed)
+
+### Output Summary
+
+Displays:
+
+- Successfully updated kits count
+- Pages moved (removed) count
+- Network errors count
+- Other errors count
+- Total processed count
+
+## warm_cache
+
+Pre-populates the cache with frequently accessed data for improved performance.
+
+### Usage
+
+```bash
+python manage.py warm_cache [options]
+```
+
+### Options
+
+- `--clubs` - Number of top clubs to cache (default: 50)
+- `--kits` - Number of recent kits to cache (default: 100)
+- `--seasons` - Cache seasons for top clubs
+- `--search` - Cache popular search queries
+
+### Examples
+
+Basic cache warming (clubs and kits):
+
+```bash
+python manage.py warm_cache
+```
+
+Cache everything including seasons and search:
+
+```bash
+python manage.py warm_cache --seasons --search
+```
+
+Cache more items:
+
+```bash
+python manage.py warm_cache --clubs 100 --kits 200 --seasons --search
+```
+
+### What It Caches
+
+#### Always Cached
+
+- **Popular kits**: Recent kits with full serialized data (team, season, brand, colors, etc.)
+- **Top clubs**: Clubs ranked by kit count
+- **Top brands**: Top 20 brands by kit count
+
+#### Optional (with flags)
+
+- **Club seasons** (`--seasons`): Seasons for top clubs, sorted by year
+- **Popular searches** (`--search`): Pre-computed search results for popular terms
+
+### Popular Search Terms
+
+When using `--search`, caches results for:
+
+- **Clubs**: Barcelona, Real Madrid, Manchester United, Liverpool, Arsenal, Chelsea, Manchester City, Bayern Munich, PSG, Juventus, AC Milan, Inter Milan
+- **Seasons**: 2024, 2023, 2022
+- **Brands**: adidas, nike, puma
+
+### Cache Timeouts
+
+- **Long timeout**: Club seasons, popular kits, top clubs/brands
+- **Medium timeout**: Search query results
+
+(Timeout values defined in Django settings)
+
+### Output
+
+Displays:
+
+- Progress messages for each cache category
+- Count of items cached in each category
+- Total cached items count
+
+### Notes
+
+- Skips items already in cache (doesn't override)
+- Handles errors gracefully and continues with remaining items
+- Logs errors for debugging
+- Recommended to run after database updates or periodically via cron
+- Uses Django's cache framework (configured in settings)

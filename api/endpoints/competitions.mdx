@@ -1,0 +1,200 @@
+---
+title: "Competitions Endpoints"
+description: "Search and retrieve football competition information"
+---
+
+## Search Competitions
+
+<RequestExample>
+```bash GET /api/competitions/search
+curl -X GET "https://your-domain.com/api/competitions/search?keyword=premier" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Search for football competitions and leagues by name or slug using trigram similarity. Returns up to 10 matched competitions ordered by ID.
+
+### Query Parameters
+
+<ParamField query="keyword" type="string" required>
+  Keyword to search for in competition names or slugs. Supports fuzzy matching and accent-insensitive search.
+</ParamField>
+
+### Response
+
+Returns an array of up to 10 matching competitions.
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the competition
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Full name of the competition (e.g., "Premier League", "UEFA Champions League")
+</ResponseField>
+
+<ResponseField name="slug" type="string">
+  URL-friendly slug for the competition
+</ResponseField>
+
+<ResponseField name="logo" type="string">
+  URL to the competition's logo image
+</ResponseField>
+
+<ResponseField name="logo_dark" type="string">
+  URL to the competition's logo image (dark theme version)
+</ResponseField>
+
+<ResponseField name="country" type="string">
+  ISO 2-letter country code for domestic competitions (e.g., "GB", "ES", "FR"). Null for international competitions.
+</ResponseField>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "id": 1,
+    "name": "Premier League",
+    "slug": "premier-league-kits",
+    "logo": "https://www.footballkitarchive.com/images/logos/competitions/premier-league.png",
+    "logo_dark": "https://www.footballkitarchive.com/images/logos/competitions/premier-league-dark.png",
+    "country": "GB"
+  },
+  {
+    "id": 5,
+    "name": "UEFA Champions League",
+    "slug": "uefa-champions-league-kits",
+    "logo": "https://www.footballkitarchive.com/images/logos/competitions/ucl.png",
+    "logo_dark": "https://www.footballkitarchive.com/images/logos/competitions/ucl-dark.png",
+    "country": null
+  }
+]
+```
+</ResponseExample>
+
+### Examples
+
+<CodeGroup>
+```bash Search for Premier League
+curl -X GET "https://your-domain.com/api/competitions/search?keyword=premier"
+```
+
+```bash Search for Champions League
+curl -X GET "https://your-domain.com/api/competitions/search?keyword=champions"
+```
+
+```bash Search for La Liga
+curl -X GET "https://your-domain.com/api/competitions/search?keyword=liga"
+```
+
+```bash Search for Serie A
+curl -X GET "https://your-domain.com/api/competitions/search?keyword=serie"
+```
+
+```bash Search with accent (accent-insensitive)
+curl -X GET "https://your-domain.com/api/competitions/search?keyword=brasileiro"
+# Returns "Campeonato Brasileiro Série A"
+```
+</CodeGroup>
+
+<Note>
+Results are cached for optimal performance. The search uses trigram word similarity for fuzzy matching.
+</Note>
+
+## Get Competition by ID
+
+<RequestExample>
+```bash GET /api/competitions/{competition_id}
+curl -X GET "https://your-domain.com/api/competitions/1" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve detailed information about a specific competition by its ID.
+
+### Path Parameters
+
+<ParamField path="competition_id" type="integer" required>
+  The unique identifier of the competition
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the competition
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Full name of the competition
+</ResponseField>
+
+<ResponseField name="slug" type="string">
+  URL-friendly slug for the competition
+</ResponseField>
+
+<ResponseField name="logo" type="string">
+  URL to the competition's logo image
+</ResponseField>
+
+<ResponseField name="logo_dark" type="string">
+  URL to the competition's logo image (dark theme version)
+</ResponseField>
+
+<ResponseField name="country" type="string">
+  ISO 2-letter country code for domestic competitions. Null for international competitions.
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "id": 1,
+  "name": "Premier League",
+  "slug": "premier-league-kits",
+  "logo": "https://www.footballkitarchive.com/images/logos/competitions/premier-league.png",
+  "logo_dark": "https://www.footballkitarchive.com/images/logos/competitions/premier-league-dark.png",
+  "country": "GB"
+}
+```
+</ResponseExample>
+
+## Competition Types
+
+The Football Kit Archive includes kits from various competition types:
+
+### Domestic Leagues
+- **Premier League** (England)
+- **La Liga** (Spain)
+- **Serie A** (Italy)
+- **Bundesliga** (Germany)
+- **Ligue 1** (France)
+- **Eredivisie** (Netherlands)
+- **Primeira Liga** (Portugal)
+- **Championship** (England)
+- And many more domestic leagues worldwide...
+
+### International Club Competitions
+- **UEFA Champions League**
+- **UEFA Europa League**
+- **UEFA Conference League**
+- **Copa Libertadores**
+- **Copa Sudamericana**
+- **CAF Champions League**
+- **AFC Champions League**
+
+### International Tournaments
+- **FIFA World Cup**
+- **UEFA European Championship**
+- **Copa América**
+- **Africa Cup of Nations**
+- **Asian Cup**
+
+### Domestic Cups
+- **FA Cup** (England)
+- **Copa del Rey** (Spain)
+- **Coppa Italia** (Italy)
+- **DFB-Pokal** (Germany)
+- **Coupe de France** (France)
+- And many more domestic cup competitions...
+
+<Tip>
+Use the search endpoint to discover all available competitions in the database.
+</Tip>

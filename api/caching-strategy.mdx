@@ -1,0 +1,676 @@
+---
+title: 'Caching Strategy'
+description: 'Redis-based caching with automatic invalidation and cache warming'
+---
+
+## Overview
+
+FKApi uses **Redis** as the caching backend to improve performance by reducing database queries and API response times. The caching system includes automatic invalidation via Django signals, cache warming capabilities, and configurable TTL values.
+
+## Cache Configuration
+
+### Redis Setup
+
+**Location**: `fkapi/settings.py`
+
+```python
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/1'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        },
+        'KEY_PREFIX': 'fkapi',
+        'TIMEOUT': 3600,  # Default: 1 hour
+    }
+}
+```
+
+**Environment Variables**:
+- `REDIS_URL` - Redis connection URL (default: `redis://localhost:6379/1`)
+
+### Cache Timeouts
+
+Different cache timeouts for different data types:
+
+| Constant                  | Value    | Duration  | Use Case                        |
+|---------------------------|----------|-----------|----------------------------------|
+| `CACHE_TIMEOUT_SHORT`     | 300s     | 5 min     | Frequently changing data         |
+| `CACHE_TIMEOUT_MEDIUM`    | 1800s    | 30 min    | Search results, filtered queries |
+| `CACHE_TIMEOUT_LONG`      | 3600s    | 1 hour    | Relatively static data           |
+| `CACHE_TIMEOUT_VERY_LONG` | 86400s   | 24 hours  | Very static data                 |
+
+## Cache Key Generation
+
+### generate_cache_key()
+
+**Location**: `core/cache_utils.py:30-52`
+
+```python
+from core.cache_utils import generate_cache_key
+
+# Basic usage
+cache_key = generate_cache_key("club_kits", club_id)
+# Result: "club_kits_1"
+
+# With multiple parameters
+cache_key = generate_cache_key("club_kits", club_id, "season", season_id)
+# Result: "club_kits_1_season_2"
+
+# With keyword arguments
+cache_key = generate_cache_key("kits", club=1, season=2, page=1)
+# Result: "kits_club=1_page=1_season=2" (sorted)
+```
+
+**Features**:
+- Consistent key format from prefix and arguments
+- Automatically sorts keyword arguments for consistency
+- Hashes keys longer than 200 characters using MD5
+- Prevents Redis key length issues
+
+**Implementation**:
+```python
+def generate_cache_key(prefix: str, *args: Any, **kwargs: Any) -> str:
+    parts = [prefix]
+    parts.extend(str(arg) for arg in args)
+    
+    if kwargs:
+        sorted_kwargs = sorted(kwargs.items())
+        parts.extend(f"{k}={v}" for k, v in sorted_kwargs)
+    
+    key_string = "_".join(parts)
+    
+    if len(key_string) > 200:
+        key_hash = hashlib.md5(key_string.encode()).hexdigest()
+        return f"{prefix}_{key_hash}"
+    
+    return key_string
+```
+
+## Cached Endpoints
+
+### Clubs
+
+#### GET /api/clubs/{club_id}/kits
+
+- **Cache key**: `club_kits_{club_id}_season_{season}_page_{page}_page_size_{page_size}`
+- **TTL**: 30 minutes (`CACHE_TIMEOUT_MEDIUM`)
+- **Implementation**: `fkapi/api.py:603-619`
+- **Invalidation**: When Kit, Club, or Season changes
+
+#### GET /api/clubs/search
+
+- **Cache key**: `search_clubs_{keyword}`
+- **TTL**: 30 minutes
+- **Implementation**: `fkapi/api.py:650-661`
+- **Invalidation**: When Club changes
+
+### Kits
+
+#### GET /api/kits
+
+- **Cache key**: `kits_club_{club}_season_{season}_country_{country}_primary_color_{color}_secondary_color_{colors}_design_{design}_year_{year}_first_year_{fy}_second_year_{sy}_page_{page}_page_size_{size}`
+- **TTL**: 30 minutes
+- **Implementation**: `fkapi/api.py:982-1022`
+- **Invalidation**: When Kit changes
+
+#### GET /api/kits/{kit_id}
+
+- **Cache key**: `kit_json_{kit_id}`
+- **TTL**: 1 hour (`CACHE_TIMEOUT_LONG`)
+- **Implementation**: `fkapi/api.py:1446-1529`
+- **Invalidation**: When Kit changes
+
+#### GET /api/kits/bulk
+
+- **Cache key**: `kits_bulk_{sorted_slugs_csv}`
+- **TTL**: 30 minutes
+- **Implementation**: `fkapi/api.py:1364-1407`
+- **Invalidation**: When Kit changes
+
+#### GET /api/kits/search
+
+- **Cache key**: `search_kits_{keyword}`
+- **TTL**: 30 minutes
+- **Implementation**: `fkapi/api.py:1265-1285`
+- **Invalidation**: When Kit changes
+
+### Seasons
+
+#### GET /api/seasons
+
+- **Cache key**: `season_club_{club_id}`
+- **TTL**: 1 hour
+- **Implementation**: `fkapi/api.py:1053-1066`
+- **Invalidation**: When Club or Kit changes
+
+#### GET /api/seasons/search
+
+- **Cache key**: `search_seasons_{keyword}`
+- **TTL**: 30 minutes
+- **Implementation**: `fkapi/api.py:1159-1168`
+- **Invalidation**: When Season changes
+
+### Brands
+
+#### GET /api/brands/search
+
+- **Cache key**: `search_brands_{keyword}`
+- **TTL**: 30 minutes
+- **Implementation**: `fkapi/api.py:690-709`
+- **Invalidation**: When Brand changes
+
+### Competitions
+
+#### GET /api/competitions/search
+
+- **Cache key**: `search_competitions_{keyword}`
+- **TTL**: 30 minutes
+- **Implementation**: `fkapi/api.py:738-760`
+- **Invalidation**: When Competition changes
+
+### User Collections
+
+#### GET /api/user-collection/{userid}
+
+- **Cache key**: `user_collection_{userid}`
+- **TTL**: 7 days (604800 seconds)
+- **Implementation**: `fkapi/api.py:1817-1851`
+- **Invalidation**: Manual via `force=true` parameter
+
+## Cache Invalidation
+
+### Automatic Invalidation
+
+**Location**: `core/cache_utils.py:196-217`
+
+Cache invalidation is triggered automatically via Django signals when models are saved or deleted.
+
+**Signal Setup**:
+```python
+from django.db.models.signals import post_save, post_delete
+
+def setup_cache_invalidation():
+    """Set up signal handlers for automatic cache invalidation."""
+    
+    def invalidate_on_save(sender, instance, **kwargs):
+        invalidation_fn = _MODEL_INVALIDATORS.get(type(instance))
+        if invalidation_fn is not None:
+            invalidation_fn(instance.id)
+        if type(instance) is Kit:
+            _invalidate_kit_related(instance)
+    
+    def invalidate_on_delete(sender, instance, **kwargs):
+        invalidation_fn = _MODEL_INVALIDATORS.get(type(instance))
+        if invalidation_fn is not None:
+            invalidation_fn(instance.id)
+    
+    for model in (Club, Season, Kit, Brand, Competition):
+        post_save.connect(invalidate_on_save, sender=model)
+        post_delete.connect(invalidate_on_delete, sender=model)
+```
+
+### Cache Invalidation Functions
+
+**Location**: `core/cache_utils.py`
+
+#### invalidate_club_cache()
+
+```python
+from core.cache_utils import invalidate_club_cache
+
+invalidate_club_cache(club_id=1)
+```
+
+**Invalidates** (`cache_utils.py:54-67`):
+- `club_{club_id}_*`
+- `season_club_{club_id}_*`
+- `kit_club_{club_id}_*`
+- `search_club_{club_id}_*`
+
+#### invalidate_season_cache()
+
+```python
+from core.cache_utils import invalidate_season_cache
+
+invalidate_season_cache(season_id=1)
+```
+
+**Invalidates** (`cache_utils.py:70-82`):
+- `season_{season_id}_*`
+- `kit_season_{season_id}_*`
+- `search_season_{season_id}_*`
+
+#### invalidate_kit_cache()
+
+```python
+from core.cache_utils import invalidate_kit_cache
+
+invalidate_kit_cache(kit_id=1)
+```
+
+**Invalidates** (`cache_utils.py:85-96`):
+- `kit_{kit_id}_*`
+- `search_kit_{kit_id}_*`
+- Related club and season caches (via `_invalidate_kit_related`)
+
+#### invalidate_brand_cache()
+
+```python
+from core.cache_utils import invalidate_brand_cache
+
+invalidate_brand_cache(brand_id=1)
+```
+
+**Invalidates** (`cache_utils.py:99-110`):
+- `brand_{brand_id}_*`
+- `search_brand_{brand_id}_*`
+
+#### invalidate_competition_cache()
+
+```python
+from core.cache_utils import invalidate_competition_cache
+
+invalidate_competition_cache(competition_id=1)
+```
+
+**Invalidates** (`cache_utils.py:113-124`):
+- `competition_{competition_id}_*`
+- `search_competition_{competition_id}_*`
+
+#### invalidate_search_cache()
+
+```python
+from core.cache_utils import invalidate_search_cache
+
+invalidate_search_cache()
+```
+
+**Invalidates** (`cache_utils.py:127-134`):
+- `search_*` (all search-related caches)
+
+#### invalidate_user_collection_cache()
+
+```python
+from core.cache_utils import invalidate_user_collection_cache
+
+invalidate_user_collection_cache(userid=148184)
+```
+
+**Invalidates** (`cache_utils.py:137-148`):
+- `user_collection_{userid}`
+
+### Pattern-Based Invalidation
+
+**Location**: `core/cache_utils.py:151-178`
+
+```python
+def _invalidate_patterns(patterns: list[str]) -> None:
+    """Invalidate cache entries matching the given patterns."""
+    try:
+        from django_redis import get_redis_connection
+        
+        redis_client = get_redis_connection("default")
+        for pattern in patterns:
+            try:
+                keys = redis_client.keys(f"fkapi:{pattern}")
+                if keys:
+                    redis_client.delete(*keys)
+                    logger.info(f"Invalidated {len(keys)} cache keys matching pattern: {pattern}")
+            except Exception as pattern_error:
+                logger.debug(f"Pattern invalidation not supported for pattern {pattern}: {str(pattern_error)}")
+    except ImportError:
+        logger.debug("django-redis not available, skipping pattern-based invalidation")
+    except Exception as e:
+        logger.debug(f"Cache pattern invalidation not supported: {str(e)}")
+```
+
+**Features**:
+- Uses Redis `KEYS` command for pattern matching
+- Includes `fkapi:` key prefix automatically
+- Gracefully handles unsupported cache backends
+- Logs invalidation actions
+
+## Cache Warming
+
+Cache warming pre-populates frequently accessed data to improve response times.
+
+### Management Command
+
+**Command**: `python manage.py warm_cache`
+
+**Options**:
+```bash
+Usage: manage.py warm_cache [options]
+
+Options:
+  --clubs N       Cache seasons for top N clubs (default: 50)
+  --kits N        Cache N recent kits (default: 100)
+  --seasons       Cache seasons for top clubs
+  --search        Cache popular search queries
+```
+
+### Examples
+
+**Cache seasons for top 100 clubs**:
+```bash
+python manage.py warm_cache --seasons --clubs 100
+```
+
+**Cache 200 recent kits**:
+```bash
+python manage.py warm_cache --kits 200
+```
+
+**Cache everything including popular searches**:
+```bash
+python manage.py warm_cache --seasons --search
+```
+
+### Scheduled Warming with Celery
+
+Add cache warming to your Celery beat schedule:
+
+```python
+# settings.py
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'scrape_daily': {
+        'task': 'core.tasks.scrape_daily',
+        'schedule': crontab(hour=0, minute=0),
+    },
+    'warm_cache': {
+        'task': 'core.tasks.warm_cache_task',
+        'schedule': crontab(hour=2, minute=0),  # 2 AM daily
+    },
+}
+```
+
+## Performance Optimization
+
+### Query Optimization
+
+Cached endpoints use optimized queries:
+
+```python
+# Example: Kit detail endpoint
+Kit.objects.select_related(
+    "team", "season", "brand", "type", "primary_color"
+).prefetch_related(
+    "competition", "secondary_color"
+)
+```
+
+**Benefits**:
+- `select_related()` - Reduces queries for foreign keys (single JOIN)
+- `prefetch_related()` - Efficient queries for many-to-many relationships
+- Combined: Minimize database round-trips
+
+### Cache Hit Rate Monitoring
+
+Monitor cache performance via Redis:
+
+```bash
+# Redis CLI
+redis-cli
+> INFO stats
+
+# Look for:
+# keyspace_hits - Number of cache hits
+# keyspace_misses - Number of cache misses
+```
+
+**Calculate hit rate**:
+```python
+hit_rate = keyspace_hits / (keyspace_hits + keyspace_misses)
+```
+
+**Target**: 80%+ hit rate for optimal performance
+
+**Low hit rates may indicate**:
+- Timeouts too short
+- Cache invalidation too frequent
+- Need for cache warming
+- Unique queries (not cacheable)
+
+### Memory Management
+
+**Redis Configuration** (`redis.conf`):
+
+```conf
+# Set max memory (e.g., 512MB)
+maxmemory 512mb
+
+# Eviction policy - remove least recently used keys
+maxmemory-policy allkeys-lru
+
+# Sample size for LRU algorithm
+maxmemory-samples 5
+```
+
+**Monitor memory usage**:
+```bash
+redis-cli INFO memory
+```
+
+**Key metrics**:
+- `used_memory` - Total memory used
+- `used_memory_peak` - Peak memory usage
+- `used_memory_overhead` - Overhead memory
+- `evicted_keys` - Number of evicted keys
+
+## Cache Flow Diagram
+
+```
+┌─────────────┐
+│   Request   │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────┐
+│  Generate Cache Key │
+└──────┬──────────────┘
+       │
+       ▼
+┌─────────────────────┐      Yes    ┌──────────────┐
+│  Check Redis Cache  ├─────────────►│ Return Data  │
+└──────┬──────────────┘              └──────────────┘
+       │ No
+       ▼
+┌─────────────────────┐
+│   Query Database    │
+└──────┬──────────────┘
+       │
+       ▼
+┌─────────────────────┐
+│  Store in Cache     │
+│  (with TTL)         │
+└──────┬──────────────┘
+       │
+       ▼
+┌─────────────────────┐
+│   Return Data       │
+└─────────────────────┘
+```
+
+## Troubleshooting
+
+### Cache Not Working
+
+**1. Verify Redis is running**:
+```bash
+redis-cli ping
+# Expected output: PONG
+```
+
+**2. Test Django cache connection**:
+```python
+python manage.py shell
+
+>>> from django.core.cache import cache
+>>> cache.set('test', 'value', 60)
+>>> cache.get('test')
+'value'
+```
+
+**3. Check django-redis installation**:
+```bash
+pip list | grep django-redis
+```
+
+**4. Verify environment variables**:
+```bash
+echo $REDIS_URL
+# Should output: redis://localhost:6379/1
+```
+
+### Stale Data Issues
+
+**Symptoms**:
+- Updated data not reflected in API responses
+- Old data returned after model changes
+
+**Solutions**:
+
+**1. Verify signal connections**:
+```python
+python manage.py shell
+
+>>> from core.cache_utils import setup_cache_invalidation
+>>> setup_cache_invalidation()
+```
+
+**2. Check signal firing**:
+```python
+# Add logging to cache_utils.py
+import logging
+logger = logging.getLogger(__name__)
+
+def invalidate_on_save(sender, instance, **kwargs):
+    logger.info(f"Invalidating cache for {type(instance).__name__} {instance.id}")
+    # ...
+```
+
+**3. Manual cache invalidation**:
+```python
+from core.cache_utils import invalidate_search_cache
+invalidate_search_cache()
+```
+
+**4. Check cache timeouts**:
+```python
+# settings.py
+CACHE_TIMEOUT_MEDIUM = 1800  # 30 minutes
+# Reduce if data changes frequently
+```
+
+### High Memory Usage
+
+**1. Check Redis memory**:
+```bash
+redis-cli INFO memory | grep used_memory_human
+```
+
+**2. View cache keys**:
+```bash
+redis-cli KEYS "fkapi:*" | wc -l
+```
+
+**3. Reduce cache timeouts**:
+```python
+# settings.py
+CACHE_TIMEOUT_MEDIUM = 900  # 15 minutes instead of 30
+```
+
+**4. Implement cache size limits**:
+```conf
+# redis.conf
+maxmemory 512mb
+maxmemory-policy allkeys-lru
+```
+
+**5. Clean up unused keys**:
+```bash
+redis-cli --scan --pattern "fkapi:search_*" | xargs redis-cli DEL
+```
+
+## Best Practices
+
+### 1. Use Consistent Cache Keys
+
+Always use `generate_cache_key()` for consistency:
+
+```python
+# Good
+from core.cache_utils import generate_cache_key
+cache_key = generate_cache_key("kits", club=1, season=2)
+
+# Bad
+cache_key = f"kits_club_{club}_season_{season}"  # Inconsistent ordering
+```
+
+### 2. Set Appropriate Timeouts
+
+Match timeout to data change frequency:
+
+| Data Type           | Recommended TTL | Reason                          |
+|---------------------|-----------------|----------------------------------|
+| Search results      | 30 min          | Queries repeated frequently      |
+| Individual resources| 1 hour          | Changes less often               |
+| Static data         | 24 hours        | Rarely changes                   |
+| User collections    | 7 days          | Scraped infrequently             |
+
+### 3. Monitor Cache Performance
+
+**Metrics to track**:
+- Cache hit rate (target: 80%+)
+- Average response time
+- Database query count
+- Redis memory usage
+- Cache key count
+
+**Tools**:
+- Redis INFO command
+- Django Debug Toolbar
+- Application Performance Monitoring (APM)
+
+### 4. Warm Cache After Deployments
+
+```bash
+# After deployment
+python manage.py warm_cache --seasons --kits 100
+```
+
+### 5. Test Cache Invalidation
+
+```python
+# tests/test_cache.py
+from django.test import TestCase
+from django.core.cache import cache
+from core.models import Kit
+from core.cache_utils import generate_cache_key
+
+class CacheInvalidationTestCase(TestCase):
+    def test_kit_save_invalidates_cache(self):
+        kit = Kit.objects.first()
+        cache_key = generate_cache_key("kit_json", kit.id)
+        
+        # Cache the kit
+        cache.set(cache_key, {"test": "data"}, 3600)
+        self.assertIsNotNone(cache.get(cache_key))
+        
+        # Save the kit (should trigger invalidation)
+        kit.name = "Updated Name"
+        kit.save()
+        
+        # Cache should be invalidated
+        self.assertIsNone(cache.get(cache_key))
+```
+
+## Related Documentation
+
+- [Search Functionality](/api/search) - Cached search endpoints
+- [Bulk Operations](/api/bulk-operations) - Bulk endpoint caching
+- [API Overview](/api/overview) - Complete endpoint documentation

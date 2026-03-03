@@ -1,0 +1,327 @@
+---
+title: Complete Setup Guide
+description: Detailed installation and configuration guide for FKApi
+---
+
+This guide walks you through the complete setup process for FKApi, from installing dependencies to running your first API requests.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- Python 3.10 or higher
+- PostgreSQL 15 or higher
+- Git
+- pip and virtualenv
+
+## System Requirements
+
+- **OS**: Windows, Linux, or macOS
+- **RAM**: Minimum 4GB (8GB recommended)
+- **Storage**: 1GB for application and dependencies
+- **Network**: Internet connection for initial data scraping
+
+## Installation
+
+<Steps>
+
+### Clone the Repository
+
+Clone the FKApi repository to your local machine:
+
+```bash
+git clone https://github.com/your-username/fkapi.git
+cd fkapi
+```
+
+### Create Virtual Environment
+
+Create and activate a Python virtual environment:
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate on Linux/Mac
+source venv/bin/activate
+
+# Activate on Windows
+venv\Scripts\activate
+```
+
+### Install Dependencies
+
+Install all required Python packages:
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+The main dependencies include:
+- Django 5.0.4 - Web framework
+- django-ninja 1.1.0 - API framework
+- psycopg2-binary 2.9.9 - PostgreSQL adapter
+- django-redis 5.4.0 - Redis cache backend
+- celery 5.4.0 - Async task queue (optional)
+- gunicorn 21.2.0 - Production WSGI server
+
+### Set Up PostgreSQL
+
+Create a PostgreSQL database for FKApi:
+
+```bash
+# Connect to PostgreSQL
+psql -U postgres
+
+# Create database
+CREATE DATABASE fkapi;
+
+# Create user (optional)
+CREATE USER fkapi_user WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE fkapi TO fkapi_user;
+
+# Exit
+\q
+```
+
+### Configure Environment Variables
+
+Copy the example environment file and customize it:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your configuration:
+
+```bash
+# Django Settings
+DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+DJANGO_PORT=8000
+DJANGO_API_ENABLE_AUTH=False
+
+# PostgreSQL Database
+POSTGRES_DB=fkapi
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+
+# Redis (optional)
+REDIS_URL=redis://localhost:6379/1
+REDIS_PORT=6379
+
+# Celery (optional)
+ENABLE_CELERY=False
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+```
+
+<Note>
+For development, you can disable Redis and Celery. FKApi will automatically fall back to local memory cache and threading.
+</Note>
+
+### Run Database Migrations
+
+Apply all database migrations to set up the schema:
+
+```bash
+python manage.py migrate
+```
+
+This creates all necessary tables for:
+- Clubs
+- Seasons
+- Kits
+- Brands
+- Competitions
+- Colors
+- User collections
+
+### Create Superuser
+
+Create an admin account to access the Django admin panel:
+
+```bash
+python manage.py createsuperuser
+```
+
+Follow the prompts to set username, email, and password.
+
+### Load Initial Data (Optional)
+
+If you have fixture files or want to import sample data:
+
+```bash
+python manage.py loaddata fixtures/initial_data.json
+```
+
+### Start Development Server
+
+Run the Django development server:
+
+```bash
+python manage.py runserver
+```
+
+The API will be available at:
+- API endpoints: http://localhost:8000/api/
+- Admin panel: http://localhost:8000/admin/
+- Health check: http://localhost:8000/api/health
+
+</Steps>
+
+## Verification
+
+Verify your installation by testing these endpoints:
+
+### Health Check
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+Expected response:
+```json
+{
+  "status": "ok",
+  "database": "connected",
+  "cache": "available"
+}
+```
+
+### Test API Endpoints
+
+```bash
+# List clubs
+curl http://localhost:8000/api/clubs
+
+# Search clubs
+curl http://localhost:8000/api/clubs/search?keyword=manchester
+
+# Get seasons for a club
+curl http://localhost:8000/api/seasons?club_id=1
+```
+
+## Production Configuration
+
+For production deployments, update your `.env` file:
+
+```bash
+# Security
+DJANGO_SECRET_KEY=your-long-random-secret-key-here
+DJANGO_DEBUG=False
+DJANGO_ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
+
+# Enable authentication
+DJANGO_API_ENABLE_AUTH=True
+
+# Use strong database credentials
+POSTGRES_PASSWORD=strong-random-password
+
+# Enable Redis and Celery for better performance
+ENABLE_CELERY=True
+```
+
+<Warning>
+**Important Security Notes:**
+- Never commit `.env` files to version control
+- Generate a strong `DJANGO_SECRET_KEY` using `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`
+- Always set `DEBUG=False` in production
+- Use strong, unique passwords for database access
+- Configure HTTPS/SSL for production deployments
+</Warning>
+
+## Running with Gunicorn (Production)
+
+For production, use Gunicorn instead of the development server:
+
+```bash
+gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 fkapi.wsgi:application
+```
+
+Gunicorn configuration:
+- `--workers 4`: Number of worker processes (recommended: 2-4 x CPU cores)
+- `--timeout 120`: Worker timeout in seconds
+- `--bind 0.0.0.0:8000`: Bind to all interfaces on port 8000
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Docker Deployment" icon="docker" href="/guides/docker">
+    Deploy FKApi using Docker and docker-compose
+  </Card>
+  <Card title="Celery Setup" icon="clock" href="/guides/celery">
+    Configure async tasks with Celery
+  </Card>
+  <Card title="Caching Strategy" icon="database" href="/guides/caching">
+    Optimize performance with Redis caching
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/guides/monitoring">
+    Set up Prometheus and Grafana monitoring
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### Database Connection Errors
+
+If you see connection errors:
+
+1. Verify PostgreSQL is running: `sudo systemctl status postgresql` (Linux) or `pg_ctl status` (Windows)
+2. Check database credentials in `.env`
+3. Ensure database exists: `psql -U postgres -l`
+4. Check PostgreSQL is listening on the correct port: `netstat -an | grep 5432`
+
+### Module Import Errors
+
+If you see `ModuleNotFoundError`:
+
+1. Ensure virtual environment is activated
+2. Reinstall requirements: `pip install -r requirements.txt`
+3. Verify Python version: `python --version` (should be 3.10+)
+
+### Port Already in Use
+
+If port 8000 is already in use:
+
+1. Change port in `.env`: `DJANGO_PORT=8001`
+2. Or run with custom port: `python manage.py runserver 8001`
+3. Find and kill process using port: `lsof -ti:8000 | xargs kill` (Linux/Mac)
+
+### Permission Errors
+
+On Linux/Mac, you may need to:
+
+```bash
+chmod +x manage.py
+sudo chown -R $USER:$USER .
+```
+
+## Environment Variables Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DJANGO_SECRET_KEY` | (auto-generated in dev) | Secret key for Django security |
+| `DJANGO_DEBUG` | `True` | Enable debug mode |
+| `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated list of allowed hosts |
+| `DJANGO_PORT` | `8000` | Port for development server |
+| `DJANGO_API_ENABLE_AUTH` | `False` | Enable API authentication |
+| `POSTGRES_DB` | `fkapi` | PostgreSQL database name |
+| `POSTGRES_USER` | `postgres` | PostgreSQL username |
+| `POSTGRES_PASSWORD` | `postgres` | PostgreSQL password |
+| `POSTGRES_HOST` | `localhost` | PostgreSQL host |
+| `POSTGRES_PORT` | `5432` | PostgreSQL port |
+| `REDIS_URL` | `redis://localhost:6379/1` | Redis connection URL |
+| `ENABLE_CELERY` | `False` | Enable Celery for async tasks |
+| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery message broker |
+| `CELERY_RESULT_BACKEND` | `redis://localhost:6379/0` | Celery result storage |
+
+## Additional Resources
+
+- [Django Documentation](https://docs.djangoproject.com/)
+- [Django Ninja Documentation](https://django-ninja.rest-framework.com/)
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
+- [Python Virtual Environments](https://docs.python.org/3/library/venv.html)

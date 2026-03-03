@@ -1,0 +1,57 @@
+---
+title: Management Commands Overview
+description: Overview of Django management commands available in FKApi
+---
+
+FKApi includes a comprehensive set of Django management commands to help you scrape football kit data, maintain the database, and optimize performance.
+
+## Command Categories
+
+### Scraping Commands
+
+Commands for fetching football kit data from external sources:
+
+- **scrape_latest** - Scrape the latest kits across multiple pages
+- **scrape_club_details** - Scrape club logos and details for clubs missing data
+- **scrape_kit_by_slug** - Scrape a specific kit by its slug identifier
+- **scrape_whole_club** - Scrape all kits for all clubs in the database
+- **scrape_brand** - Scrape brand logos and details for brands missing data
+- **scrape_user** - Scrape user collections from FootballKitArchive
+
+See [Scraping Commands](/commands/scraping) for detailed usage.
+
+### Maintenance Commands
+
+Commands for database maintenance and optimization:
+
+- **categorize_type_k** - Categorize and order kit types for proper search result sorting
+- **clean_double_slash_urls** - Fix malformed URLs containing double slashes
+- **update_last_season** - Update kit photos from recent seasons (2025, 2026, 2025-26)
+- **warm_cache** - Pre-populate the cache with frequently accessed data
+
+See [Maintenance Commands](/commands/maintenance) for detailed usage.
+
+## Running Commands
+
+All management commands are run using Django's `manage.py`:
+
+```bash
+python manage.py <command_name> [options]
+```
+
+## Common Options
+
+Many commands support common options:
+
+- `--help` - Display help information for the command
+- `--dry-run` - Preview changes without saving (where applicable)
+- `--force` - Force operation even if data already exists
+- `--workers N` - Set number of concurrent worker threads
+
+## Getting Help
+
+For detailed help on any command:
+
+```bash
+python manage.py <command_name> --help
+```

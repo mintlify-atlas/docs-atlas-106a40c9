@@ -1,0 +1,541 @@
+---
+title: Celery Setup
+description: Configure Celery for asynchronous task processing and scheduled jobs
+---
+
+Celery provides asynchronous task processing for FKApi, enabling background jobs like data scraping and scheduled tasks. This guide covers installation, configuration, and usage.
+
+## Overview
+
+Celery is **completely optional** for FKApi. The system automatically falls back to threading if Celery is not available. However, Celery is **recommended for production** as it provides:
+
+- Better performance for background tasks
+- Task scheduling with Celery Beat
+- Task monitoring with Flower
+- Distributed task processing
+- Task retry and error handling
+
+## When to Use Celery
+
+<CardGroup cols={2}>
+  <Card title="Use Celery" icon="check" color="green">
+    - Production deployments
+    - Scheduled tasks (daily scraping)
+    - High-traffic environments
+    - Task monitoring required
+  </Card>
+  <Card title="Skip Celery" icon="circle" color="gray">
+    - Development/testing
+    - Low-traffic deployments
+    - Simpler setup preferred
+    - No scheduled tasks needed
+  </Card>
+</CardGroup>
+
+## Architecture
+
+FKApi uses Celery with the following components:
+
+- **Redis**: Message broker and result backend
+- **Celery Worker**: Processes async tasks
+- **Celery Beat**: Scheduler for periodic tasks
+- **Flower**: Web-based monitoring dashboard
+
+```
+┌─────────────┐
+│   Django    │
+│  (Web App)  │
+└──────┬──────┘
+       │ Submit tasks
+       ↓
+┌─────────────┐     ┌──────────────┐
+│    Redis    │←────│Celery Worker │
+│   (Broker)  │     │  (Executor)  │
+└─────────────┘     └──────────────┘
+       ↑
+       │ Schedule tasks
+┌──────┴──────┐
+│ Celery Beat │
+│ (Scheduler) │
+└─────────────┘
+```
+
+## Prerequisites
+
+Before installing Celery, ensure you have:
+
+- Redis installed and running
+- Python 3.10 or higher
+- FKApi base installation complete
+
+## Installation
+
+<Steps>
+
+### Install Redis
+
+Redis is required as the message broker for Celery.
+
+<Tabs>
+  <Tab title="Linux (Ubuntu/Debian)">
+    ```bash
+    sudo apt-get update
+    sudo apt-get install redis-server
+    sudo systemctl start redis-server
+    sudo systemctl enable redis-server
+    
+    # Verify Redis is running
+    redis-cli ping
+    # Should return: PONG
+    ```
+  </Tab>
+  
+  <Tab title="macOS">
+    ```bash
+    brew install redis
+    brew services start redis
+    
+    # Verify Redis is running
+    redis-cli ping
+    # Should return: PONG
+    ```
+  </Tab>
+  
+  <Tab title="Windows">
+    **Option 1: Using Memurai (Recommended)**
+    
+    1. Download from https://www.memurai.com/
+    2. Install and start the service
+    3. Redis will run on `localhost:6379`
+    
+    **Option 2: Using Docker**
+    
+    ```bash
+    docker run -d --name redis -p 6379:6379 redis:7-alpine
+    ```
+    
+    **Option 3: Using WSL2**
+    
+    ```bash
+    # In WSL2 terminal
+    sudo apt-get update
+    sudo apt-get install redis-server
+    sudo service redis-server start
+    ```
+  </Tab>
+</Tabs>
+
+### Install Celery Packages
+
+Install Celery and related dependencies:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate  # Linux/Mac
+# or
+venv\Scripts\activate  # Windows
+
+# Install Celery packages
+pip install celery[redis]==5.4.0
+pip install django-celery-beat==2.6.0
+pip install flower==2.0.1
+pip install django-redis==5.4.0
+```
+
+<Note>
+These packages are already included in `requirements.txt`, so if you installed all dependencies, you already have Celery.
+</Note>
+
+### Configure Environment Variables
+
+Update your `.env` file to enable Celery:
+
+```bash
+# Enable Celery
+ENABLE_CELERY=True
+
+# Redis configuration
+REDIS_URL=redis://localhost:6379/1
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+```
+
+### Verify Celery Configuration
+
+The Celery app is configured in `fkapi/celery.py`:
+
+```python
+import os
+from celery import Celery
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "fkapi.settings")
+
+app = Celery("fkapi")
+app.config_from_object("django.conf:settings", namespace="CELERY")
+app.autodiscover_tasks()
+```
+
+This configuration:
+- Automatically discovers tasks in Django apps
+- Loads settings from Django with `CELERY_` prefix
+- Uses Redis as broker and result backend
+
+</Steps>
+
+## Running Celery
+
+### Starting Workers
+
+Celery workers process async tasks. Start a worker with:
+
+```bash
+# Using management command
+python manage.py celery worker --loglevel=info --pool=threads --concurrency=4
+
+# Or using Celery directly
+celery -A fkapi worker --loglevel=info --pool=threads --concurrency=4
+```
+
+<Accordion title="Worker Options Explained">
+  - `--loglevel=info`: Set logging level (debug, info, warning, error, critical)
+  - `--pool=threads`: Use thread pool (required for Windows)
+  - `--concurrency=4`: Number of worker threads (adjust based on CPU cores)
+  - `-A fkapi`: Name of the Celery app
+</Accordion>
+
+### Starting Beat Scheduler
+
+Celery Beat schedules periodic tasks. Start the scheduler with:
+
+```bash
+celery -A fkapi beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+```
+
+The DatabaseScheduler stores schedules in the database, allowing runtime configuration through Django admin.
+
+### Starting Flower (Monitoring)
+
+Flower provides a web UI for monitoring Celery:
+
+```bash
+celery -A fkapi flower --port=5555
+```
+
+Access the dashboard at: http://localhost:5555
+
+Flower shows:
+- Active workers
+- Running tasks
+- Task history
+- Success/failure rates
+- Worker resource usage
+
+### Running All Services
+
+For development, you'll need to run three separate processes:
+
+```bash
+# Terminal 1: Django
+python manage.py runserver
+
+# Terminal 2: Celery Worker
+celery -A fkapi worker --loglevel=info --pool=threads --concurrency=4
+
+# Terminal 3: Celery Beat
+celery -A fkapi beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+# Terminal 4 (optional): Flower
+celery -A fkapi flower --port=5555
+```
+
+## Scheduled Tasks
+
+FKApi includes scheduled tasks configured in `settings.py`:
+
+```python
+CELERY_BEAT_SCHEDULE = {
+    'scrape_daily': {
+        'task': 'core.tasks.scrape_daily',
+        'schedule': crontab(hour=0, minute=0),  # Daily at midnight
+    },
+}
+```
+
+### Modifying Schedules
+
+You can modify schedules in several ways:
+
+<Tabs>
+  <Tab title="Django Admin">
+    1. Go to http://localhost:8000/admin/
+    2. Navigate to **Periodic Tasks**
+    3. Add or edit tasks
+    4. Changes take effect immediately
+  </Tab>
+  
+  <Tab title="Settings File">
+    Edit `CELERY_BEAT_SCHEDULE` in `fkapi/settings.py`:
+    
+    ```python
+    # Daily at 3 AM
+    'schedule': crontab(hour=3, minute=0)
+    
+    # Every 6 hours
+    'schedule': crontab(minute=0, hour='*/6')
+    
+    # Weekly on Monday at 3 AM
+    'schedule': crontab(day_of_week=1, hour=3, minute=0)
+    
+    # Every 30 minutes
+    'schedule': crontab(minute='*/30')
+    ```
+    
+    Restart Celery Beat after changes.
+  </Tab>
+</Tabs>
+
+## Task Examples
+
+### Creating a Task
+
+Define tasks in your Django app's `tasks.py`:
+
+```python
+from celery import shared_task
+import logging
+
+logger = logging.getLogger(__name__)
+
+@shared_task
+def scrape_user_collection(userid):
+    """Scrape user collection from FootballKitArchive."""
+    logger.info(f"Starting scrape for user {userid}")
+    try:
+        # Your scraping logic here
+        result = perform_scrape(userid)
+        logger.info(f"Completed scrape for user {userid}")
+        return result
+    except Exception as e:
+        logger.error(f"Error scraping user {userid}: {e}")
+        raise
+```
+
+### Calling a Task
+
+Call tasks asynchronously from your views or API endpoints:
+
+```python
+from core.tasks import scrape_user_collection
+
+# Async execution (with Celery)
+task = scrape_user_collection.delay(userid=12345)
+
+# Get task ID
+task_id = task.id
+
+# Check task status later
+from celery.result import AsyncResult
+result = AsyncResult(task_id)
+if result.ready():
+    print(result.result)
+```
+
+### Fallback to Threading
+
+If Celery is not available, FKApi automatically uses threading:
+
+```python
+import threading
+
+def scrape_async(userid):
+    """Fallback to threading if Celery unavailable."""
+    thread = threading.Thread(target=perform_scrape, args=(userid,))
+    thread.start()
+```
+
+## Monitoring
+
+### Command Line
+
+Monitor Celery from the command line:
+
+```bash
+# Check active workers
+celery -A fkapi inspect active
+
+# Check registered tasks
+celery -A fkapi inspect registered
+
+# Check worker stats
+celery -A fkapi inspect stats
+
+# Monitor events in real-time
+celery -A fkapi events
+
+# Purge all tasks
+celery -A fkapi purge
+```
+
+### Flower Dashboard
+
+Flower provides comprehensive monitoring:
+
+1. Start Flower: `celery -A fkapi flower --port=5555`
+2. Open http://localhost:5555
+3. View:
+   - **Tasks**: History of all tasks
+   - **Workers**: Active workers and their status
+   - **Monitor**: Real-time task execution
+   - **Broker**: Redis connection stats
+
+## Troubleshooting
+
+### Redis Connection Failed
+
+**Error**: `Error: Redis is not running`
+
+**Solution**:
+```bash
+# Check if Redis is running
+redis-cli ping
+# Should return: PONG
+
+# Start Redis
+# Linux: sudo systemctl start redis-server
+# Mac: brew services start redis
+# Windows: Start Memurai service or Docker container
+```
+
+### Tasks Not Executing
+
+**Error**: Tasks appear in queue but don't execute
+
+**Solution**:
+1. Check worker is running: `celery -A fkapi inspect active`
+2. Check for errors in worker logs
+3. Verify task is registered: `celery -A fkapi inspect registered`
+4. Check Redis connection: `redis-cli ping`
+
+### ModuleNotFoundError
+
+**Error**: `ModuleNotFoundError: No module named 'celery'`
+
+**Solution**:
+```bash
+# Install Celery
+pip install celery[redis] django-celery-beat
+
+# Or disable Celery in .env
+ENABLE_CELERY=False
+```
+
+### Worker Crashes
+
+**Error**: Worker exits unexpectedly
+
+**Solution**:
+1. Check worker logs for errors
+2. Increase worker timeout
+3. Check database connection
+4. Verify memory availability
+5. Check for task deadlocks
+
+### Tasks Slow or Hanging
+
+**Error**: Tasks take too long or never complete
+
+**Solution**:
+1. Check database performance
+2. Add timeouts to external API calls
+3. Monitor Redis memory usage
+4. Increase worker concurrency
+5. Profile task code for bottlenecks
+
+## Production Deployment
+
+For production, run Celery as a system service:
+
+### Systemd Service (Linux)
+
+Create `/etc/systemd/system/celery.service`:
+
+```ini
+[Unit]
+Description=Celery Worker
+After=network.target redis.target
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/fkapi
+Environment="PATH=/var/www/fkapi/venv/bin"
+ExecStart=/var/www/fkapi/venv/bin/celery -A fkapi worker \
+    --loglevel=info \
+    --pool=threads \
+    --concurrency=4 \
+    --logfile=/var/log/celery/worker.log
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl enable celery
+sudo systemctl start celery
+sudo systemctl status celery
+```
+
+### Docker Deployment
+
+See the [Docker guide](/guides/docker) for containerized deployment with docker-compose.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Task Design">
+    - Keep tasks small and focused
+    - Make tasks idempotent (safe to retry)
+    - Handle errors gracefully
+    - Add logging for debugging
+    - Set task timeouts
+  </Accordion>
+  
+  <Accordion title="Performance">
+    - Use appropriate concurrency settings
+    - Monitor Redis memory usage
+    - Use task routing for different priorities
+    - Implement rate limiting for external APIs
+    - Profile slow tasks
+  </Accordion>
+  
+  <Accordion title="Reliability">
+    - Configure task retries
+    - Use result backends for important tasks
+    - Monitor task success rates
+    - Set up alerting for failures
+    - Back up Redis data in production
+  </Accordion>
+  
+  <Accordion title="Security">
+    - Use strong Redis passwords
+    - Limit Redis network access
+    - Validate task inputs
+    - Use encrypted connections in production
+    - Keep Celery and Redis updated
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Docker Deployment" icon="docker" href="/guides/docker">
+    Deploy with docker-compose for simplified management
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/guides/monitoring">
+    Set up Prometheus and Grafana for metrics
+  </Card>
+</CardGroup>

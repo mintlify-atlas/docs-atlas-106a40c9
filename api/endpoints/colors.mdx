@@ -1,0 +1,217 @@
+---
+title: "Colors Reference"
+description: "Available colors for kit filtering and color information"
+---
+
+## Overview
+
+The Football Kit Archive API provides color information for kits, including primary and secondary colors. Colors are used for filtering kits and are returned with kit details.
+
+## Available Colors
+
+The following colors are available for filtering kits:
+
+<CardGroup cols={3}>
+  <Card title="White" icon="circle" color="#FFFFFF">
+    Classic white color
+  </Card>
+  <Card title="Red" icon="circle" color="#FF0000">
+    Classic red color
+  </Card>
+  <Card title="Blue" icon="circle" color="#0000FF">
+    Classic blue color
+  </Card>
+  <Card title="Black" icon="circle" color="#000000">
+    Classic black color
+  </Card>
+  <Card title="Yellow" icon="circle" color="#FFFF00">
+    Classic yellow color
+  </Card>
+  <Card title="Green" icon="circle" color="#00FF00">
+    Classic green color
+  </Card>
+  <Card title="Sky blue" icon="circle" color="#87CEEB">
+    Light blue shade
+  </Card>
+  <Card title="Navy" icon="circle" color="#000080">
+    Dark blue shade
+  </Card>
+  <Card title="Orange" icon="circle" color="#FFA500">
+    Classic orange color
+  </Card>
+  <Card title="Gray" icon="circle" color="#808080">
+    Neutral gray color
+  </Card>
+  <Card title="Claret" icon="circle" color="#7F1734">
+    Deep burgundy red
+  </Card>
+  <Card title="Purple" icon="circle" color="#800080">
+    Classic purple color
+  </Card>
+  <Card title="Pink" icon="circle" color="#FFC0CB">
+    Classic pink color
+  </Card>
+  <Card title="Brown" icon="circle" color="#A52A2A">
+    Classic brown color
+  </Card>
+  <Card title="Gold" icon="circle" color="#FFD700">
+    Metallic gold color
+  </Card>
+  <Card title="Silver" icon="circle" color="#C0C0C0">
+    Metallic silver color
+  </Card>
+  <Card title="Off-white" icon="circle" color="#FAF9F6">
+    Cream or off-white shade
+  </Card>
+</CardGroup>
+
+## Color Schema
+
+When colors are returned in API responses, they follow this schema:
+
+<ResponseField name="name" type="string">
+  The name of the color (e.g., "Red", "Blue", "White")
+</ResponseField>
+
+<ResponseField name="color" type="string">
+  Hex color code representing the color (e.g., "#FF0000", "#0000FF", "#FFFFFF")
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "name": "Red",
+  "color": "#DA020E"
+}
+```
+
+## Using Colors in Kit Filtering
+
+### Filter by Primary Color
+
+<RequestExample>
+```bash Filter by primary color
+curl -X GET "https://your-domain.com/api/kits?primary_color=Red" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Filter kits by their primary (dominant) color.
+
+<ParamField query="primary_color" type="string">
+  Must be one of the available colors listed above
+</ParamField>
+
+### Filter by Secondary Colors
+
+<RequestExample>
+```bash Filter by secondary colors
+curl -X GET "https://your-domain.com/api/kits?secondary_color=White&secondary_color=Blue" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Filter kits by their secondary (accent) colors. You can specify multiple secondary colors.
+
+<ParamField query="secondary_color" type="array">
+  Can specify multiple values. Each must be one of the available colors listed above
+</ParamField>
+
+### Combined Color Filtering
+
+<RequestExample>
+```bash Combined color filters
+curl -X GET "https://your-domain.com/api/kits?primary_color=Red&secondary_color=White&secondary_color=Black" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Filter kits that have a specific primary color AND specific secondary colors.
+
+## Color Information in Kit Details
+
+When retrieving kit details via `GET /api/kits/{kit_id}`, color information is included:
+
+<ResponseExample>
+```json Kit with Colors
+{
+  "name": "Manchester United 2024-25 Home Kit",
+  "slug": "manchester-united-2024-25-home-kit",
+  "primary_color": {
+    "name": "Red",
+    "color": "#DA020E"
+  },
+  "secondary_color": [
+    {
+      "name": "White",
+      "color": "#FFFFFF"
+    },
+    {
+      "name": "Black",
+      "color": "#000000"
+    }
+  ],
+  "team": {
+    "name": "Manchester United",
+    "...": "..."
+  },
+  "...": "..."
+}
+```
+</ResponseExample>
+
+## Validation
+
+<Warning>
+When filtering by colors, ensure you use the exact color names as listed above. Invalid color names will result in a `400 Bad Request` error.
+</Warning>
+
+### Error Response
+
+```json
+{
+  "detail": "Invalid primary_color 'Redd'. Available options: White, Red, Blue, Black, Yellow, Green, Sky blue, Navy, Orange, Gray, Claret, Purple, Pink, Brown, Gold, Silver, Off-white"
+}
+```
+
+## Popular Color Combinations
+
+Some popular color combinations for football kits:
+
+- **Red & White** - Traditional combination (e.g., Arsenal, Manchester United)
+- **Blue & White** - Classic combination (e.g., Chelsea, Everton)
+- **Red & Blue** - Distinctive combination (e.g., Barcelona, Crystal Palace)
+- **Black & White** - Bold contrast (e.g., Newcastle United, Juventus)
+- **Claret & Blue** - Traditional combination (e.g., Aston Villa, West Ham United)
+- **Sky blue & White** - Light combination (e.g., Manchester City, Napoli)
+- **Yellow & Blue** - Bright combination (e.g., Sweden national team)
+- **Green & White** - Fresh combination (e.g., Celtic, Sporting CP)
+
+<Tip>
+Use color filtering combined with other filters (club, season, design) to find specific kits.
+</Tip>
+
+## Examples
+
+<CodeGroup>
+```bash Find all red kits
+curl -X GET "https://your-domain.com/api/kits?primary_color=Red"
+```
+
+```bash Find red kits with white accents
+curl -X GET "https://your-domain.com/api/kits?primary_color=Red&secondary_color=White"
+```
+
+```bash Find blue kits from 2024
+curl -X GET "https://your-domain.com/api/kits?primary_color=Blue&year=2024"
+```
+
+```bash Find striped red and white kits
+curl -X GET "https://your-domain.com/api/kits?primary_color=Red&secondary_color=White&design=Stripes"
+```
+
+```bash Find claret and blue kits from England
+curl -X GET "https://your-domain.com/api/kits?primary_color=Claret&secondary_color=Blue&country=GB"
+```
+</CodeGroup>

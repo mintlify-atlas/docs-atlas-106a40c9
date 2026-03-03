@@ -1,0 +1,140 @@
+---
+title: API Overview
+description: Introduction to the Football Kit Archive API
+---
+
+## Introduction
+
+The Football Kit Archive API is a comprehensive REST API for managing and retrieving football kit information from around the world. This API provides access to a vast database of football kits, clubs, seasons, brands, and competitions.
+
+## Base URL
+
+All API endpoints are prefixed with `/api/`:
+
+```
+http://localhost:8000/api/
+```
+
+For production deployments, replace `localhost:8000` with your production domain.
+
+## Key Features
+
+- **Advanced Search**: Trigram-based fuzzy search for clubs, kits, and brands
+- **Accent-Insensitive**: Find "Málaga" by searching "Malaga"
+- **Caching**: Responses are cached for optimal performance
+- **Pagination**: Efficient pagination for large result sets
+- **Rate Limiting**: Built-in protection against abuse
+- **Optional Authentication**: API key authentication can be enabled
+
+## API Documentation
+
+### Interactive Documentation
+
+The API provides interactive documentation powered by Swagger/OpenAPI:
+
+- **Swagger UI**: `http://localhost:8000/api/docs`
+- **OpenAPI Schema**: `http://localhost:8000/api/openapi.json`
+
+### Complete Project Documentation
+
+For comprehensive project documentation including setup guides, ethical scraping practices, troubleshooting, and architecture:
+
+```
+http://localhost:8000/docs/
+```
+
+## Quick Start
+
+### Health Check
+
+Verify the API is running:
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-03-03T12:00:00Z",
+  "database": "connected",
+  "cache": "connected"
+}
+```
+
+### Search for Clubs
+
+```bash
+curl "http://localhost:8000/api/clubs/search?keyword=manchester"
+```
+
+### List Kits
+
+```bash
+curl "http://localhost:8000/api/kits?page=1&page_size=20"
+```
+
+### Get Kit by ID
+
+```bash
+curl http://localhost:8000/api/kits/1
+```
+
+## API Endpoints
+
+The API is organized into the following categories:
+
+### System
+- Health checks and monitoring
+- API metrics and statistics
+- Documentation information
+
+### Clubs
+- Search clubs by name
+- Get club details
+- Retrieve club kits
+
+### Kits
+- List kits with filtering
+- Search kits by name and year
+- Get kit details
+- Bulk kit retrieval
+
+### Seasons
+- Search seasons by year
+- Get club seasons
+
+### Brands
+- Search brands by name
+
+### Competitions
+- Search competitions
+
+### User Collection
+- Scrape and retrieve user collections from FootballKitArchive
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Learn how to enable and use API key authentication
+  </Card>
+  <Card title="Rate Limiting" icon="gauge" href="/api/rate-limiting">
+    Understand rate limits and how to handle them
+  </Card>
+  <Card title="Pagination" icon="list" href="/api/pagination">
+    Learn how to paginate through large result sets
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/api/errors">
+    Understand error responses and status codes
+  </Card>
+</CardGroup>
+
+## Version
+
+Current API version: **1.0.0**
+
+## License
+
+MIT License - [https://opensource.org/licenses/MIT](https://opensource.org/licenses/MIT)

@@ -1,0 +1,354 @@
+---
+title: 'Contributing'
+description: 'How to contribute to FKApi, development setup, and pull request guidelines'
+---
+
+## Welcome Contributors!
+
+Thank you for considering contributing to FKApi! This guide will help you get started with development and explain our contribution process.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- **Python 3.10+**: [Download Python](https://www.python.org/downloads/)
+- **PostgreSQL 12+**: [Download PostgreSQL](https://www.postgresql.org/download/) (or SQLite for development)
+- **Redis 6+**: [Download Redis](https://redis.io/download) (optional for caching)
+- **Git**: [Download Git](https://git-scm.com/downloads)
+
+## Development Setup
+
+### 1. Fork and Clone
+
+```bash
+# Fork the repository on GitHub, then clone your fork
+git clone https://github.com/YOUR_USERNAME/fkapi.git
+cd fkapi
+
+# Add upstream remote
+git remote add upstream https://github.com/sunr4y/fkapi.git
+```
+
+### 2. Create Virtual Environment
+
+```bash
+python -m venv venv
+
+# On Windows
+venv\Scripts\activate
+
+# On Linux/Mac
+source venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
+# Install production dependencies
+pip install -r fkapi/requirements.txt
+
+# Install development dependencies (includes testing and linting tools)
+pip install -r fkapi/requirements-dev.txt
+```
+
+### 4. Configure Environment
+
+Create a `.env` file in the project root:
+
+```bash
+# Django Settings
+DJANGO_SECRET_KEY=your-secret-key-here-for-development
+DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/fkapi
+# Or use SQLite for development:
+# DATABASE_URL=sqlite:///db.sqlite3
+
+# Redis (optional for development)
+REDIS_URL=redis://localhost:6379/1
+
+# API Settings
+DJANGO_API_ENABLE_AUTH=False
+API_RATE_LIMIT_RATE=100/hour
+```
+
+### 5. Set Up Database
+
+```bash
+# Create database (PostgreSQL)
+createdb fkapi
+
+# Run migrations
+cd fkapi
+python manage.py migrate
+
+# Create superuser (optional)
+python manage.py createsuperuser
+```
+
+### 6. Install Pre-commit Hooks
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install git hooks
+pre-commit install
+```
+
+This will automatically run code quality checks before each commit.
+
+### 7. Verify Installation
+
+```bash
+# Start development server
+python manage.py runserver
+
+# In another terminal, test API
+curl http://localhost:8000/api/health
+
+# Access admin interface at http://localhost:8000/admin
+# API documentation at http://localhost:8000/api/docs
+```
+
+## Project Structure
+
+```
+fkapi/
+├── core/                    # Main application code
+│   ├── models.py           # Database models (Kit, Club, Season, etc.)
+│   ├── views.py            # Django views
+│   ├── api.py              # API endpoints (Django Ninja)
+│   ├── scrapers.py         # Web scraping logic
+│   ├── parsers.py          # HTML parsing
+│   ├── services/           # Business logic layer
+│   │   ├── kits_service.py
+│   │   ├── clubs_service.py
+│   │   └── scraping_service.py
+│   ├── middleware.py       # Custom middleware (rate limiting, monitoring)
+│   ├── cache_utils.py      # Cache utilities and invalidation
+│   ├── management/         # Django management commands
+│   └── tests/              # Test files
+├── fkapi/                  # Django project settings
+│   ├── settings.py         # Main settings
+│   ├── urls.py             # URL routing
+│   └── api.py              # API configuration
+├── docs/                   # Documentation
+├── requirements.txt        # Production dependencies
+└── requirements-dev.txt   # Development dependencies
+```
+
+## Development Workflow
+
+### Creating a Branch
+
+```bash
+# Update your main branch
+git checkout main
+git pull upstream main
+
+# Create a feature branch
+git checkout -b feature/your-feature-name
+# or for bug fixes:
+git checkout -b fix/bug-description
+```
+
+### Making Changes
+
+1. **Write Code**: Make your changes following our [code style guidelines](/development/code-style)
+2. **Write Tests**: Add tests for new functionality in `fkapi/core/tests/`
+3. **Run Tests**: Ensure all tests pass (`pytest`)
+4. **Check Code Quality**: Run linting (`ruff check .`)
+5. **Update Documentation**: Update relevant docs if needed
+
+### Running Tests Locally
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest fkapi/core/tests/test_api.py
+
+# Run with coverage report
+pytest --cov=fkapi/core --cov-report=html
+
+# Run specific test markers
+pytest -m unit  # Run only unit tests
+pytest -m "not slow"  # Skip slow tests
+```
+
+### Code Quality Checks
+
+```bash
+# Run Ruff linter
+ruff check .
+
+# Auto-fix issues
+ruff check --fix .
+
+# Format code
+ruff format .
+
+# Type checking (optional)
+mypy fkapi/core
+```
+
+These checks will also run automatically via pre-commit hooks.
+
+### Committing Changes
+
+```bash
+# Stage your changes
+git add .
+
+# Commit with a descriptive message
+git commit -m "Add feature: description of your changes"
+
+# Pre-commit hooks will run automatically
+# If they fail, fix the issues and commit again
+```
+
+**Commit Message Guidelines**:
+- Use present tense ("Add feature" not "Added feature")
+- Be descriptive but concise
+- Reference issue numbers when applicable (#123)
+- Examples:
+  - `Add bulk kits endpoint for multiple kit retrieval`
+  - `Fix cache invalidation for club updates`
+  - `Update API documentation for user collection endpoint`
+
+## Pull Request Process
+
+### 1. Push Your Changes
+
+```bash
+# Push to your fork
+git push origin feature/your-feature-name
+```
+
+### 2. Create Pull Request
+
+1. Go to the [FKApi repository](https://github.com/sunr4y/fkapi)
+2. Click "New Pull Request"
+3. Select your fork and branch
+4. Fill out the PR template:
+
+```markdown
+## Description
+Brief description of changes
+
+## Type of Change
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation update
+
+## Testing
+How has this been tested?
+
+## Checklist
+- [ ] Code follows style guidelines
+- [ ] Tests added/updated
+- [ ] Documentation updated
+- [ ] All tests pass locally
+```
+
+### 3. Code Review
+
+- Respond to feedback from maintainers
+- Make requested changes by pushing new commits
+- Keep the conversation constructive and respectful
+
+### 4. After Approval
+
+- Maintainers will merge your PR
+- You can delete your feature branch
+- Update your fork's main branch
+
+## Common Development Tasks
+
+### Adding a New API Endpoint
+
+1. Add endpoint in `fkapi/fkapi/api.py`:
+
+```python
+@api.get("/my-endpoint", response=MySchema)
+def my_endpoint(request: HttpRequest):
+    """Endpoint description."""
+    return MyModel.objects.all()
+```
+
+2. Add tests in `fkapi/core/tests/test_api.py`
+3. Update API documentation
+
+### Adding a New Model
+
+1. Define model in `fkapi/core/models.py`
+2. Create migration: `python manage.py makemigrations`
+3. Run migration: `python manage.py migrate`
+4. Add to admin: `fkapi/core/admin.py`
+5. Add tests: `fkapi/core/tests/test_models.py`
+
+### Adding Cache Invalidation
+
+1. Add signal handler in `fkapi/core/cache_utils.py`
+2. Connect signal in model or apps.py
+3. Test cache invalidation works correctly
+
+### Creating Management Commands
+
+1. Create file in `fkapi/core/management/commands/`
+2. Inherit from `BaseCommand`
+3. Implement `handle()` method
+4. Add tests
+
+## What to Contribute
+
+### Good First Issues
+
+- Bug fixes
+- Documentation improvements
+- Test coverage improvements
+- Code quality improvements
+
+### Feature Contributions
+
+- New API endpoints
+- Enhanced search/filtering
+- Performance optimizations
+- New management commands
+
+### Not Accepting
+
+- Breaking changes without discussion
+- Changes to scraping logic that violate robots.txt
+- Features that significantly increase complexity
+
+## Getting Help
+
+- **Questions**: Open a GitHub Discussion
+- **Bugs**: Open an issue with detailed reproduction steps
+- **Features**: Open an issue to discuss before implementing
+- **Documentation**: Check the `/docs` directory
+- **Code Review**: Review existing PRs to learn patterns
+
+## Code of Conduct
+
+- Be respectful and inclusive
+- Provide constructive feedback
+- Focus on the code, not the person
+- Follow open source best practices
+
+## Additional Resources
+
+- [Testing Guide](/development/testing)
+- [Code Style Guidelines](/development/code-style)
+- [Troubleshooting](/development/troubleshooting)
+- [API Documentation](/api/overview)
+
+---
+
+**Thank you for contributing to FKApi!** Your contributions help make this project better for everyone.

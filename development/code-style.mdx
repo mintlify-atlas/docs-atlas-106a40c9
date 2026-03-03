@@ -1,0 +1,460 @@
+---
+title: 'Code Style'
+description: 'Code style guidelines, Ruff configuration, and formatting standards for FKApi'
+---
+
+## Overview
+
+FKApi uses [Ruff](https://github.com/astral-sh/ruff) for linting and formatting Python code. Ruff is a fast Python linter and formatter that combines the functionality of multiple tools (Flake8, isort, Black, etc.) into one.
+
+## Quick Reference
+
+```bash
+# Check code style
+ruff check .
+
+# Auto-fix issues
+ruff check --fix .
+
+# Format code
+ruff format .
+
+# Run all checks and formatting
+ruff check --fix . && ruff format .
+```
+
+## Ruff Configuration
+
+### Basic Settings
+
+Configuration is defined in `pyproject.toml`:
+
+```toml
+[tool.ruff]
+# Exclude common directories
+exclude = [
+    ".bzr", ".direnv", ".eggs", ".git", ".hg",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".venv", "venv", "__pycache__",
+    "build", "dist", "node_modules",
+    "*/migrations/*.py",  # Exclude Django migrations
+]
+
+# Line length (generous for readability)
+line-length = 120
+
+# Target Python version
+target-version = "py310"
+```
+
+### Linting Rules
+
+```toml
+[tool.ruff.lint]
+# Enabled rule sets
+select = [
+    "F",   # Pyflakes (basic errors)
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "N",   # pep8-naming
+    "DJ",  # Django-specific rules
+    "B",   # flake8-bugbear (common bugs)
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade (modern Python syntax)
+]
+
+# Ignored rules
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "DJ001", # Model __str__ not required always
+    "DJ003", # __unicode__ not needed (Python 3)
+    "DJ006", # Meta class not always needed
+    "DJ008", # __repr__ not always needed
+    "B905",  # zip() strict= not in Python 3.10
+    "N801",  # Allow Type_KAdmin naming convention
+]
+
+# Allow auto-fixes for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when prefixed with underscore
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+```
+
+### Import Sorting
+
+```toml
+[tool.ruff.lint.isort]
+known-first-party = ["fkapi", "core"]
+```
+
+This ensures imports are sorted correctly:
+
+```python
+# Standard library imports
+import os
+import sys
+from typing import Optional
+
+# Third-party imports
+import django
+from django.db import models
+from rest_framework import serializers
+
+# Local imports
+from core.models import Kit
+from fkapi.settings import DEBUG
+```
+
+### Formatting Rules
+
+```toml
+[tool.ruff.format]
+# Use double quotes (like Black)
+quote-style = "double"
+
+# Use spaces for indentation
+indent-style = "space"
+
+# Respect magic trailing commas
+skip-magic-trailing-comma = false
+
+# Auto-detect line endings
+line-ending = "auto"
+```
+
+## Code Style Guidelines
+
+### Line Length
+
+- **Maximum**: 120 characters
+- **Recommended**: 80-100 characters for readability
+-Formatter will handle line breaking automatically
+
+### Naming Conventions
+
+```python
+# Classes: PascalCase
+class KitService:
+    pass
+
+# Functions and methods: snake_case
+def get_kit_by_slug(slug: str):
+    pass
+
+# Constants: UPPER_SNAKE_CASE
+MAX_KITS_PER_PAGE = 30
+DEFAULT_CACHE_TIMEOUT = 3600
+
+# Private methods: leading underscore
+def _internal_helper():
+    pass
+
+# Variables: snake_case
+kit_count = 0
+user_id = 123
+```
+
+### Type Hints
+
+Use type hints for function parameters and return values:
+
+```python
+from typing import Optional, List, Dict
+from core.models import Kit
+
+def get_kits_by_club(club_slug: str, limit: int = 10) -> List[Kit]:
+    """Retrieve kits for a specific club."""
+    return Kit.objects.filter(team__slug=club_slug)[:limit]
+
+def parse_kit_data(html: str) -> Optional[Dict[str, str]]:
+    """Parse kit data from HTML."""
+    if not html:
+        return None
+    return {"name": "Kit Name", "slug": "kit-slug"}
+```
+
+### Docstrings
+
+Use clear, concise docstrings:
+
+```python
+def scrape_kit(slug: str, force: bool = False) -> Optional[Kit]:
+    """
+    Scrape kit data from the source website.
+
+    Args:
+        slug: The kit slug to scrape
+        force: Force re-scraping even if kit exists
+
+    Returns:
+        Kit object if successful, None otherwise
+
+    Raises:
+        ScrapingError: If scraping fails after retries
+    """
+    pass
+```
+
+### Import Organization
+
+```python
+# 1. Standard library
+import os
+import sys
+from datetime import datetime
+from typing import Optional
+
+# 2. Third-party packages
+import requests
+from bs4 import BeautifulSoup
+from django.db import models
+from ninja import Router
+
+# 3. Local imports
+from core.models import Kit, Club
+from core.services import KitsService
+from fkapi.settings import DEBUG
+```
+
+### String Formatting
+
+Prefer f-strings for string formatting:
+
+```python
+# Good
+name = "Arsenal"
+message = f"Welcome to {name} kits"
+
+# Avoid (unless necessary)
+message = "Welcome to {} kits".format(name)
+message = "Welcome to %s kits" % name
+```
+
+### Error Handling
+
+```python
+# Specific exceptions
+try:
+    kit = Kit.objects.get(slug=slug)
+except Kit.DoesNotExist:
+    logger.error(f"Kit not found: {slug}")
+    return None
+except Exception as e:
+    logger.exception(f"Unexpected error: {e}")
+    raise
+
+# Context managers for resources
+with open("file.txt", "r") as f:
+    content = f.read()
+```
+
+### Django-Specific Guidelines
+
+```python
+# Model definition
+class Kit(models.Model):
+    """Football kit model."""
+
+    slug = models.SlugField(unique=True, max_length=255)
+    name = models.CharField(max_length=255)
+    team = models.ForeignKey(Club, on_delete=models.CASCADE)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Kit"
+        verbose_name_plural = "Kits"
+
+    def __str__(self) -> str:
+        return self.name
+
+# QuerySet optimization
+# Good: Use select_related for foreign keys
+kits = Kit.objects.select_related("team", "season").all()
+
+# Good: Use prefetch_related for many-to-many
+clubs = Club.objects.prefetch_related("competitions").all()
+```
+
+## Type Checking (Optional)
+
+### Mypy Configuration
+
+```toml
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true
+show_error_codes = true
+
+# Ignore missing imports for third-party packages
+[[tool.mypy.overrides]]
+module = [
+    "django.*",
+    "ninja.*",
+    "bs4.*",
+    "requests.*",
+]
+ignore_missing_imports = true
+```
+
+### Running Mypy
+
+```bash
+# Check types
+mypy fkapi/core
+
+# Check specific file
+mypy fkapi/core/models.py
+```
+
+## Pre-commit Hooks
+
+### Configuration
+
+Pre-commit hooks are defined in `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  # Ruff linter and formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # General checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-json
+      - id: check-ast
+      - id: debug-statements
+      - id: mixed-line-ending
+
+  # Django checks
+  - repo: local
+    hooks:
+      - id: django-check
+        name: Django Check
+        entry: bash -c 'cd fkapi && python manage.py check'
+        language: system
+        pass_filenames: false
+        always_run: true
+```
+
+### Installation
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install hooks
+pre-commit install
+
+# Run manually on all files
+pre-commit run --all-files
+```
+
+## Code Review Checklist
+
+Before submitting code:
+
+- [ ] Code passes `ruff check .`
+- [ ] Code is formatted with `ruff format .`
+- [ ] No debug statements (`print()`, `breakpoint()`)
+- [ ] Type hints added for function signatures
+- [ ] Docstrings added for public functions
+- [ ] Import statements organized correctly
+- [ ] No unused imports or variables
+- [ ] Tests pass (`pytest`)
+- [ ] Coverage maintained or improved
+- [ ] Django migrations created if models changed
+
+## IDE Integration
+
+### VS Code
+
+```json
+{
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": true,
+      "source.organizeImports": true
+    }
+  },
+  "ruff.lint.args": ["--config=pyproject.toml"]
+}
+```
+
+### PyCharm
+
+1. Install Ruff plugin
+2. Configure as external tool:
+   - Program: `ruff`
+   - Arguments: `check --fix $FilePath$`
+3. Configure file watcher for auto-formatting
+
+## Common Issues
+
+### Line Too Long
+
+```python
+# Bad
+kit = Kit.objects.filter(team__slug="arsenal", season__name="2024-25", type__category="home").select_related("team", "season").first()
+
+# Good
+kit = (
+    Kit.objects
+    .filter(team__slug="arsenal", season__name="2024-25", type__category="home")
+    .select_related("team", "season")
+    .first()
+)
+```
+
+### Unused Imports
+
+```python
+# Bad
+from core.models import Kit, Club, Season  # Season unused
+
+# Good
+from core.models import Kit, Club
+```
+
+### Import Sorting
+
+Ruff will automatically sort imports. Run:
+
+```bash
+ruff check --fix .
+```
+
+## Additional Resources
+
+- [Ruff Documentation](https://docs.astral.sh/ruff/)
+- [PEP 8 Style Guide](https://peps.python.org/pep-0008/)
+- [Django Coding Style](https://docs.djangoproject.com/en/dev/internals/contributing/writing-code/coding-style/)
+- [Type Hints Cheat Sheet](https://mypy.readthedocs.io/en/stable/cheat_sheet_py3.html)
+
+---
+
+**Consistent code style makes collaboration easier!**

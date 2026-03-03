@@ -1,0 +1,347 @@
+---
+title: "Clubs Endpoints"
+description: "Retrieve and search football club information"
+---
+
+## Search Clubs
+
+<RequestExample>
+```bash GET /api/clubs/search
+curl -X GET "https://your-domain.com/api/clubs/search?keyword=manchester" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Search for clubs using a keyword. The search is performed on both club names and slugs using trigram word similarity for fuzzy matching.
+
+### Query Parameters
+
+<ParamField query="keyword" type="string" required>
+  Keyword to search for in club names and slugs. Supports accent-insensitive search (e.g., "Málaga" and "Malaga" return the same results).
+</ParamField>
+
+### Response
+
+Returns an array of up to 10 matching clubs, ordered by ID.
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the club
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Full name of the club
+</ResponseField>
+
+<ResponseField name="slug" type="string">
+  URL-friendly slug for the club
+</ResponseField>
+
+<ResponseField name="logo" type="string">
+  URL to the club's logo image
+</ResponseField>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "id": 1,
+    "name": "Manchester United",
+    "slug": "manchester-united-kits",
+    "logo": "https://www.footballkitarchive.com/images/logos/clubs/manchester-united.png"
+  },
+  {
+    "id": 2,
+    "name": "Manchester City",
+    "slug": "manchester-city-kits",
+    "logo": "https://www.footballkitarchive.com/images/logos/clubs/manchester-city.png"
+  }
+]
+```
+</ResponseExample>
+
+## Get Club by ID
+
+<RequestExample>
+```bash GET /api/clubs/{club_id}
+curl -X GET "https://your-domain.com/api/clubs/1" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve detailed information about a specific club by its ID.
+
+### Path Parameters
+
+<ParamField path="club_id" type="integer" required>
+  The unique identifier of the club
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the club
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Full name of the club
+</ResponseField>
+
+<ResponseField name="slug" type="string">
+  URL-friendly slug for the club
+</ResponseField>
+
+<ResponseField name="logo" type="string">
+  URL to the club's logo image
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "id": 1,
+  "name": "Manchester United",
+  "slug": "manchester-united-kits",
+  "logo": "https://www.footballkitarchive.com/images/logos/clubs/manchester-united.png"
+}
+```
+</ResponseExample>
+
+## Get Club Seasons
+
+<RequestExample>
+```bash GET /api/seasons
+curl -X GET "https://your-domain.com/api/seasons?id=1" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve all available seasons for a specific club. Returns seasons sorted by year in descending order (most recent first).
+
+### Query Parameters
+
+<ParamField query="id" type="integer" required>
+  Club ID to retrieve seasons for
+</ParamField>
+
+### Response
+
+Returns an array of seasons for the club.
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the season
+</ResponseField>
+
+<ResponseField name="year" type="string">
+  Season year in format "YYYY" or "YYYY-YY" (e.g., "2024" or "2024-25")
+</ResponseField>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "id": 123,
+    "year": "2024-25"
+  },
+  {
+    "id": 122,
+    "year": "2023-24"
+  },
+  {
+    "id": 121,
+    "year": "2022-23"
+  }
+]
+```
+</ResponseExample>
+
+<Note>
+This endpoint is cached for optimal performance. Results are sorted by year in descending order.
+</Note>
+
+## Get Club Kits
+
+<RequestExample>
+```bash GET /api/clubs/{club_id}/kits
+curl -X GET "https://your-domain.com/api/clubs/1/kits?season=123&page=1&page_size=20" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve all kits for a specific club. This is a nested resource endpoint following REST conventions.
+
+### Path Parameters
+
+<ParamField path="club_id" type="integer" required>
+  The unique identifier of the club
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="season" type="integer">
+  Filter kits by season ID (optional)
+</ParamField>
+
+<ParamField query="page" type="integer" default="1">
+  Page number for pagination (minimum: 1)
+</ParamField>
+
+<ParamField query="page_size" type="integer" default="20">
+  Number of items per page (minimum: 1, maximum: 100)
+</ParamField>
+
+### Response
+
+Returns a paginated array of kits.
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the kit
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Full name of the kit (e.g., "Manchester United 2024-25 Home Kit")
+</ResponseField>
+
+<ResponseField name="main_img_url" type="string">
+  URL to the main image of the kit
+</ResponseField>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "id": 1001,
+    "name": "Manchester United 2024-25 Home Kit",
+    "main_img_url": "https://www.footballkitarchive.com/images/kits/manchester-united-2024-25-home.jpg"
+  },
+  {
+    "id": 1002,
+    "name": "Manchester United 2024-25 Away Kit",
+    "main_img_url": "https://www.footballkitarchive.com/images/kits/manchester-united-2024-25-away.jpg"
+  }
+]
+```
+</ResponseExample>
+
+<Tip>
+For more flexible filtering options, use `/api/kits?club={club_id}` instead, which supports additional filters like color, design, and country.
+</Tip>
+
+## Get Random Clubs
+
+<RequestExample>
+```bash GET /api/random-clubs/
+curl -X GET "https://your-domain.com/api/random-clubs/?page=1&page_size=20" \
+  -H "X-API-Key: your-api-key-here"
+```
+</RequestExample>
+
+Retrieve a paginated list of random clubs with kit counts.
+
+### Query Parameters
+
+<ParamField query="page" type="integer" default="1">
+  Page number for pagination (minimum: 1)
+</ParamField>
+
+<ParamField query="page_size" type="integer" default="20">
+  Number of items per page (minimum: 1, maximum: 100)
+</ParamField>
+
+### Response
+
+<ResponseField name="clubs" type="array">
+  Array of club objects
+</ResponseField>
+
+<ResponseField name="clubs[].id" type="integer">
+  Unique identifier for the club
+</ResponseField>
+
+<ResponseField name="clubs[].name" type="string">
+  Full name of the club
+</ResponseField>
+
+<ResponseField name="clubs[].slug" type="string">
+  URL-friendly slug for the club
+</ResponseField>
+
+<ResponseField name="clubs[].logo" type="string">
+  URL to the club's logo image
+</ResponseField>
+
+<ResponseField name="clubs[].country" type="string">
+  ISO 2-letter country code (e.g., "GB", "ES", "FR")
+</ResponseField>
+
+<ResponseField name="clubs[].kit_count" type="integer">
+  Number of kits available for this club
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Pagination information
+</ResponseField>
+
+<ResponseField name="pagination.current_page" type="integer">
+  Current page number
+</ResponseField>
+
+<ResponseField name="pagination.total_pages" type="integer">
+  Total number of pages
+</ResponseField>
+
+<ResponseField name="pagination.total_count" type="integer">
+  Total number of clubs
+</ResponseField>
+
+<ResponseField name="pagination.has_next" type="boolean">
+  Whether there is a next page
+</ResponseField>
+
+<ResponseField name="pagination.has_previous" type="boolean">
+  Whether there is a previous page
+</ResponseField>
+
+<ResponseField name="pagination.next_page" type="integer">
+  Next page number (null if no next page)
+</ResponseField>
+
+<ResponseField name="pagination.previous_page" type="integer">
+  Previous page number (null if no previous page)
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "clubs": [
+    {
+      "id": 1,
+      "name": "Manchester United",
+      "slug": "manchester-united-kits",
+      "logo": "https://www.footballkitarchive.com/images/logos/clubs/manchester-united.png",
+      "country": "GB",
+      "kit_count": 150
+    },
+    {
+      "id": 5,
+      "name": "Real Madrid",
+      "slug": "real-madrid-kits",
+      "logo": "https://www.footballkitarchive.com/images/logos/clubs/real-madrid.png",
+      "country": "ES",
+      "kit_count": 145
+    }
+  ],
+  "pagination": {
+    "current_page": 1,
+    "total_pages": 25,
+    "total_count": 500,
+    "has_next": true,
+    "has_previous": false,
+    "next_page": 2,
+    "previous_page": null
+  }
+}
+```
+</ResponseExample>
+
+<Note>
+Only clubs with logos are included in the results. The default logo is excluded.
+</Note>

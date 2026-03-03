@@ -1,0 +1,562 @@
+---
+title: Installation Guide
+description: Complete installation and configuration guide for production-ready FKApi deployment
+---
+
+## Overview
+
+This guide covers complete installation of FKApi with all features including PostgreSQL, Redis caching, and optional Celery for background tasks.
+
+<Note>
+  For a quick development setup, see the [Quickstart Guide](/quickstart).
+</Note>
+
+## Prerequisites
+
+Ensure you have the following installed:
+
+- **Python 3.11+** (tested with 3.11)
+- **PostgreSQL 15+** (or 12+ for development)
+- **Redis 6+** (optional, for caching and Celery)
+- **Git** for version control
+- **pip** and **virtualenv**
+
+<CodeGroup>
+  ```bash Ubuntu/Debian
+  sudo apt update
+  sudo apt install python3.11 python3.11-venv python3-pip
+  sudo apt install postgresql postgresql-contrib
+  sudo apt install redis-server
+  ```
+
+  ```bash macOS (Homebrew)
+  brew install python@3.11
+  brew install postgresql@15
+  brew install redis
+  ```
+
+  ```bash Windows
+  # Download Python 3.11+ from python.org
+  # Download PostgreSQL from postgresql.org
+  # Download Redis from redis.io or use Docker
+  ```
+</CodeGroup>
+
+## Installation Steps
+
+<Steps>
+  <Step title="Clone Repository">
+    Clone the FKApi repository:
+
+    ```bash
+    git clone https://github.com/sunr4y/fkapi.git
+    cd fkapi
+    ```
+  </Step>
+
+  <Step title="Create Virtual Environment">
+    Create an isolated Python environment:
+
+    <CodeGroup>
+      ```bash Linux/Mac
+      python3.11 -m venv venv
+      source venv/bin/activate
+      ```
+
+      ```bash Windows
+      python -m venv venv
+      venv\Scripts\activate
+      ```
+    </CodeGroup>
+
+    Verify activation:
+    ```bash
+    which python  # Should show path in venv folder
+    python --version  # Should show Python 3.11+
+    ```
+  </Step>
+
+  <Step title="Install Dependencies">
+    Install all required packages:
+
+    ```bash
+    pip install --upgrade pip
+    pip install -r requirements.txt
+    ```
+
+    For development with testing tools:
+    ```bash
+    pip install -r requirements-dev.txt
+    ```
+
+    **Key Dependencies Installed:**
+    - Django 5.0.4 - Web framework
+    - django-ninja 1.1.0 - REST API framework
+    - psycopg2-binary 2.9.9 - PostgreSQL adapter
+    - django-redis 5.4.0 - Redis cache backend
+    - celery 5.4.0 - Async task queue (optional)
+    - beautifulsoup4 4.12.3 - Web scraping
+    - cloudscraper 1.2.71 - Cloudflare bypass
+    - django-countries 7.6.1 - Country field support
+  </Step>
+
+  <Step title="Configure Environment Variables">
+    Copy the example environment file:
+
+    ```bash
+    cd fkapi
+    cp .env.example .env
+    ```
+
+    Edit `.env` with your configuration:
+
+    ```bash .env
+    # Django Settings
+    DJANGO_SECRET_KEY=  # Auto-generated in dev, required in production
+    DJANGO_DEBUG=True
+    DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+    DJANGO_PORT=8000
+    DJANGO_API_ENABLE_AUTH=False
+
+    # PostgreSQL Database
+    POSTGRES_DB=fkapi
+    POSTGRES_USER=postgres
+    POSTGRES_PASSWORD=your_secure_password
+    POSTGRES_HOST=localhost
+    POSTGRES_PORT=5432
+
+    # Redis Cache
+    REDIS_URL=redis://localhost:6379/1
+    REDIS_PORT=6379
+
+    # Celery (Optional)
+    ENABLE_CELERY=True
+    CELERY_BROKER_URL=redis://localhost:6379/0
+    CELERY_RESULT_BACKEND=redis://localhost:6379/0
+
+    # Scraper Settings
+    SCRAPER_USER_AGENT=FootballKitArchiveBot/1.0 (+http://yoursite.com; contact@youremail.com)
+
+    # Optional: Remote Access
+    # PROJECT_IP=your-server-ip
+
+    # Optional: Rate Limit Whitelist (comma-separated IPs)
+    # API_RATE_LIMIT_WHITELIST=127.0.0.1,192.168.1.100
+    ```
+
+    <Warning>
+      **Production Security:**
+      - Set `DJANGO_DEBUG=False` in production
+      - Generate a strong `DJANGO_SECRET_KEY`
+      - Use a secure `POSTGRES_PASSWORD`
+      - Configure `DJANGO_ALLOWED_HOSTS` with your domain
+    </Warning>
+  </Step>
+
+  <Step title="Set Up PostgreSQL Database">
+    Create the database:
+
+    <CodeGroup>
+      ```bash Local PostgreSQL
+      # Create database
+      createdb fkapi
+
+      # Or using psql
+      psql -U postgres
+      CREATE DATABASE fkapi;
+      \q
+      ```
+
+      ```bash Docker
+      docker run -d --name fkapi-postgres \
+        -e POSTGRES_DB=fkapi \
+        -e POSTGRES_USER=postgres \
+        -e POSTGRES_PASSWORD=postgres \
+        -p 5432:5432 \
+        postgres:15
+      ```
+
+      ```yaml docker-compose.yml
+      services:
+        db:
+          image: postgres:15
+          environment:
+            POSTGRES_DB: fkapi
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+          ports:
+            - "5432:5432"
+          volumes:
+            - postgres_data:/var/lib/postgresql/data
+
+      volumes:
+        postgres_data:
+      ```
+    </CodeGroup>
+
+    Verify connection:
+    ```bash
+    psql -U postgres -d fkapi -c "SELECT version();"
+    ```
+  </Step>
+
+  <Step title="Run Database Migrations">
+    Apply all database migrations:
+
+    ```bash
+    python manage.py migrate
+    ```
+
+    You should see output like:
+    ```
+    Running migrations:
+      Applying contenttypes.0001_initial... OK
+      Applying auth.0001_initial... OK
+      Applying core.0001_initial... OK
+      ...
+    ```
+  </Step>
+
+  <Step title="Create Superuser">
+    Create an admin account:
+
+    ```bash
+    python manage.py createsuperuser
+    ```
+
+    Enter username, email, and password when prompted.
+  </Step>
+
+  <Step title="Set Up Redis (Optional but Recommended)">
+    Start Redis server:
+
+    <CodeGroup>
+      ```bash Linux
+      sudo systemctl start redis
+      sudo systemctl enable redis  # Auto-start on boot
+      ```
+
+      ```bash macOS
+      brew services start redis
+      ```
+
+      ```bash Docker
+      docker run -d --name fkapi-redis \
+        -p 6379:6379 \
+        redis:6-alpine
+      ```
+    </CodeGroup>
+
+    Test Redis connection:
+    ```bash
+    redis-cli ping
+    # Should return: PONG
+    ```
+  </Step>
+
+  <Step title="Verify Installation">
+    Start the development server:
+
+    ```bash
+    python manage.py runserver
+    ```
+
+    Test the API:
+    ```bash
+    # In another terminal
+    curl http://localhost:8000/api/health
+    ```
+
+    Expected response:
+    ```json
+    {
+      "status": "ok",
+      "database": "connected",
+      "cache": "available"
+    }
+    ```
+  </Step>
+</Steps>
+
+## Optional: Celery Setup
+
+Celery enables background task processing for scraping operations.
+
+<Note>
+  Celery is **optional**. The system automatically falls back to threading if Celery is not available.
+</Note>
+
+### Install Celery
+
+Celery is included in `requirements.txt`, but verify:
+
+```bash
+pip list | grep celery
+# celery 5.4.0
+# django-celery-beat 2.6.0
+```
+
+### Configure Celery
+
+Ensure these settings in `.env`:
+
+```bash
+ENABLE_CELERY=True
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+```
+
+### Start Celery Worker
+
+<CodeGroup>
+  ```bash Linux/Mac
+  # Start worker
+  celery -A fkapi worker -l info
+
+  # Or use the provided script
+  chmod +x start_celery_worker.sh
+  ./start_celery_worker.sh
+  ```
+
+  ```bash Windows
+  # Use the batch script
+  start_celery_worker.bat
+  ```
+</CodeGroup>
+
+### Start Celery Beat (Scheduled Tasks)
+
+<CodeGroup>
+  ```bash Linux/Mac
+  # Start beat scheduler
+  celery -A fkapi beat -l info
+
+  # Or use the provided script
+  chmod +x start_celery_beat.sh
+  ./start_celery_beat.sh
+  ```
+
+  ```bash Windows
+  start_celery_beat.bat
+  ```
+</CodeGroup>
+
+### Monitor with Flower
+
+Flower provides a web UI for monitoring Celery:
+
+```bash
+celery -A fkapi flower --port=5555
+```
+
+Access at: `http://localhost:5555`
+
+## Production Deployment
+
+### Security Settings
+
+For production, update `.env`:
+
+```bash
+# Security
+DJANGO_DEBUG=False
+DJANGO_SECRET_KEY=your-long-random-secret-key-here
+DJANGO_ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
+
+# HTTPS Settings
+SECURE_SSL_REDIRECT=True
+SECURE_HSTS_SECONDS=31536000  # 1 year
+
+# Database with connection pooling
+POSTGRES_PASSWORD=strong-random-password
+```
+
+### Use Gunicorn
+
+Gunicorn is included in `requirements.txt`:
+
+```bash
+# Start with 4 workers
+gunicorn fkapi.wsgi:application --bind 0.0.0.0:8000 --workers 4
+```
+
+### Nginx Configuration Example
+
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /static/ {
+        alias /path/to/fkapi/static/;
+    }
+}
+```
+
+### Systemd Service Example
+
+Create `/etc/systemd/system/fkapi.service`:
+
+```ini
+[Unit]
+Description=FKApi Django Application
+After=network.target postgresql.service redis.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/fkapi/fkapi
+Environment="PATH=/path/to/fkapi/venv/bin"
+ExecStart=/path/to/fkapi/venv/bin/gunicorn \
+    --workers 4 \
+    --bind 0.0.0.0:8000 \
+    fkapi.wsgi:application
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable fkapi
+sudo systemctl start fkapi
+sudo systemctl status fkapi
+```
+
+## Environment Variables Reference
+
+### Django Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DJANGO_SECRET_KEY` | Auto-generated in dev | Secret key for cryptographic signing (required in production) |
+| `DJANGO_DEBUG` | `True` | Debug mode (set to `False` in production) |
+| `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated list of allowed hosts |
+| `DJANGO_PORT` | `8000` | Port for development server |
+| `DJANGO_API_ENABLE_AUTH` | `False` | Enable API key authentication |
+
+### Database Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_DB` | `fkapi` | Database name |
+| `POSTGRES_USER` | `postgres` | Database user |
+| `POSTGRES_PASSWORD` | `postgres` | Database password |
+| `POSTGRES_HOST` | `localhost` | Database host |
+| `POSTGRES_PORT` | `5432` | Database port |
+
+### Cache Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_URL` | `redis://localhost:6379/1` | Redis connection URL for cache |
+| `REDIS_PORT` | `6379` | Redis port |
+
+### Celery Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_CELERY` | `True` (if available) | Enable Celery background tasks |
+| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery message broker URL |
+| `CELERY_RESULT_BACKEND` | `redis://localhost:6379/0` | Celery result backend URL |
+| `FLOWER_PORT` | `5555` | Port for Flower monitoring interface |
+
+### Scraper Settings
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SCRAPER_USER_AGENT` | Yes | User agent string for web scraping (must include contact info) |
+| `HTTP_TIMEOUT` | `15` | HTTP request timeout in seconds |
+| `HTTP_MAX_RETRIES` | `3` | Maximum number of retry attempts |
+| `HTTP_BACKOFF_FACTOR` | `0.5` | Exponential backoff factor for retries |
+| `DELAY_MIN` | `2` | Minimum delay between requests (seconds) |
+| `DELAY_MAX` | `5` | Maximum delay between requests (seconds) |
+
+### Rate Limiting
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_RATE_LIMIT_WHITELIST` | Empty | Comma-separated list of whitelisted IP addresses |
+
+## Troubleshooting
+
+### PostgreSQL Connection Issues
+
+```bash
+# Check PostgreSQL is running
+sudo systemctl status postgresql
+pg_isready
+
+# Verify database exists
+psql -U postgres -l | grep fkapi
+
+# Test connection with credentials from .env
+psql -U postgres -d fkapi
+```
+
+### Redis Connection Issues
+
+```bash
+# Check Redis is running
+redis-cli ping
+
+# View Redis info
+redis-cli info
+
+# Monitor Redis commands
+redis-cli monitor
+```
+
+### Migration Errors
+
+```bash
+# Show migration status
+python manage.py showmigrations
+
+# Fake migrations if needed (careful!)
+python manage.py migrate --fake
+
+# Reset database (development only)
+python manage.py flush
+python manage.py migrate
+```
+
+### Celery Not Starting
+
+```bash
+# Check Redis connection
+redis-cli ping
+
+# Verify Celery config
+python manage.py shell
+>>> from django.conf import settings
+>>> print(settings.CELERY_BROKER_URL)
+
+# Check worker logs
+celery -A fkapi worker -l debug
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="bolt" href="/quickstart">
+    Make your first API call
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore all endpoints
+  </Card>
+  <Card title="Scraping Guide" icon="download" href="/concepts/scraping">
+    Learn ethical data collection
+  </Card>
+  <Card title="Admin Interface" icon="user-shield" href="http://localhost:8000/admin">
+    Manage data via Django admin
+  </Card>
+</CardGroup>

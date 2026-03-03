@@ -1,0 +1,414 @@
+---
+title: 'Search Functionality'
+description: 'Advanced search with fuzzy matching, trigram similarity, and accent-insensitive queries'
+---
+
+## Overview
+
+FKApi provides powerful search capabilities across multiple resources using PostgreSQL trigram matching and accent-insensitive search. The search functionality is optimized for typos, spelling variations, and international characters.
+
+## Search Features
+
+### Trigram Word Similarity
+
+The API uses PostgreSQL's `pg_trgm` extension for fuzzy text matching:
+
+- **Approximate matching** - Handles typos and spelling variations
+- **Partial word matching** - Matches portions of words
+- **Ranked results** - Returns most relevant matches first
+- **Performance optimized** - Uses GIN indexes for fast lookups
+
+### Accent-Insensitive Search
+
+Searches automatically handle accented characters using PostgreSQL's `unaccent` extension:
+
+- Searching "Malaga" matches "Málaga"
+- Searching "Munchen" matches "München"
+- Searching "Sao Paulo" matches "São Paulo"
+
+### Database Fallback
+
+For SQLite databases (development/testing), the API falls back to case-insensitive contains matching (`icontains`).
+
+## Search Endpoints
+
+### Search Clubs
+
+```bash
+GET /api/clubs/search?keyword=manchester
+```
+
+**Implementation**: `fkapi/api.py:622-661`
+
+**Algorithm**:
+- Searches both `name` and `slug` fields
+- Uses trigram word similarity on PostgreSQL
+- Returns up to 10 results ordered by ID
+- Results cached for 30 minutes
+
+**Query Logic**:
+```python
+Club.objects.filter(
+    Q(name__trigram_word_similar=keyword) | 
+    Q(slug__trigram_word_similar=keyword)
+).order_by("id")[:10]
+```
+
+**Example Response**:
+```json
+[
+  {
+    "id": 1,
+    "name": "Manchester United",
+    "slug": "manchester-united-kits",
+    "logo": "https://...",
+    "logo_dark": "https://...",
+    "country": "GB"
+  }
+]
+```
+
+### Search Brands
+
+```bash
+GET /api/brands/search?keyword=adidas
+```
+
+**Implementation**: `fkapi/api.py:664-710`
+
+**Algorithm**:
+- Searches `name` and `slug` fields with trigram matching
+- Returns up to 10 results ordered by ID
+- Results cached for 30 minutes
+
+**Example Response**:
+```json
+[
+  {
+    "id": 1,
+    "name": "Adidas",
+    "slug": "adidas",
+    "logo": "https://...",
+    "logo_dark": "https://..."
+  }
+]
+```
+
+### Search Competitions
+
+```bash
+GET /api/competitions/search?keyword=premier
+```
+
+**Implementation**: `fkapi/api.py:712-760`
+
+**Algorithm**:
+- Searches `name` and `slug` fields with trigram matching
+- Returns up to 10 results ordered by ID
+- Results cached for 30 minutes
+
+**Example Response**:
+```json
+[
+  {
+    "id": 1,
+    "name": "Premier League",
+    "slug": "premier-league",
+    "logo": "https://...",
+    "logo_dark": "https://...",
+    "country": "GB"
+  }
+]
+```
+
+### Search Seasons
+
+```bash
+GET /api/seasons/search?keyword=2025
+```
+
+**Implementation**: `fkapi/api.py:1118-1168`
+
+**Algorithm** (`fkapi/api.py:1108-1116`):
+
+1. **Trailing dash** (e.g., "2025-"):
+   - Matches seasons starting with that year
+   - Example: "2025-" matches "2025-26", "2025-27"
+
+2. **Contains dash** (e.g., "2020-21"):
+   - Exact match on full season format
+   - Example: "2020-21" matches exactly "2020-21"
+
+3. **4-digit year** (e.g., "2025"):
+   - Matches exact year or year in `first_year` or `second_year`
+   - Example: "2025" matches "2025", "2024-25", "2025-26"
+
+4. **2-digit year** (e.g., "97"):
+   - Matches years ending with those digits
+   - Example: "97" matches "1997", "1996-97", "1997-98"
+
+**Priority Ordering** (`fkapi/api.py:92-130`):
+
+1. Exact match (e.g., "2025" = "2025")
+2. Starts with keyword (e.g., "2025" in "2025-26")
+3. Ends with keyword (e.g., "2025" in "2024-25")
+4. Contains keyword (e.g., "2025" in first or second year)
+
+**Example Response**:
+```json
+[
+  {
+    "id": 1,
+    "year": "2024-25",
+    "first_year": "2024",
+    "second_year": "25"
+  },
+  {
+    "id": 2,
+    "year": "2025-26",
+    "first_year": "2025",
+    "second_year": "26"
+  }
+]
+```
+
+### Search Kits
+
+```bash
+GET /api/kits/search?keyword=Málaga 2003
+```
+
+**Implementation**: `fkapi/api.py:1236-1285`
+
+**Two-Tier Search Algorithm**:
+
+#### 1. Year Extraction (`fkapi/api.py:1171-1177`)
+- Extracts 4-digit year (19XX or 20XX) from search query
+- Removes year from search terms
+- Example: "Málaga 2003" → year="2003", terms="Málaga"
+
+#### 2. Year Filtering (`fkapi/api.py:1180-1191`)
+If year is found, matches:
+- Exact year: "2003"
+- Previous year range: "2002-03"
+- Next year range: "2003-04"
+
+#### 3. Name Search (`fkapi/api.py:1194-1213`)
+**Tiered matching strategy**:
+
+**Tier 1**: Full phrase match (accent-insensitive)
+```python
+Kit.objects.filter(name__unaccent__icontains="Málaga")
+```
+
+**Tier 2**: All terms match (AND logic)
+```python
+for term in ["Real", "Madrid"]:
+    kits = kits.filter(name__unaccent__icontains=term)
+```
+
+**Tier 3**: Any term matches (OR logic)
+```python
+Q(name__unaccent__icontains="Real") | 
+Q(name__unaccent__icontains="Madrid")
+```
+
+#### 4. Secondary Team Filtering (`fkapi/api.py:1216-1219`)
+
+Results are reordered to show primary teams first, then secondary teams (`fkapi/api.py:504-550`):
+
+**Secondary team patterns** (appear lower in results):
+- Roman numerals: "II", "III"
+- Letters: "B", "C" (as standalone words)
+- Youth indicators: "Jong", "Youth", "U17-U23"
+- Women's teams: "Ladies", "Women", "Femenino", "Féminas", "Frauen"
+
+**Example**: Searching "Barcelona" returns "FC Barcelona" before "Barcelona B"
+
+#### 5. Result Ordering
+
+Kits are ordered by (`fkapi/api.py:1274-1279`):
+1. Kit type category order (outfield before goalkeeper)
+2. Is goalkeeper (false before true)
+3. Kit type priority (Home > Away > Third > etc.)
+4. Kit type name
+5. Kit ID (descending)
+
+**Limits**: Up to 20 results fetched, then filtered to 10 after secondary team reordering
+
+**Cache**: Results cached for 30 minutes
+
+**Example Response**:
+```json
+[
+  {
+    "id": 12345,
+    "name": "Málaga 2002-03 Home Kit",
+    "main_img_url": "https://...",
+    "team_name": "Málaga CF",
+    "season_year": "2002-03"
+  }
+]
+```
+
+## Implementation Details
+
+### Search Filter Function
+
+**Location**: `fkapi/api.py:488-494`
+
+```python
+def _search_filter(field: str, keyword: str) -> Q:
+    """Create a search filter that works with both PostgreSQL and SQLite."""
+    if _is_postgresql():
+        return Q(**{f"{field}__trigram_word_similar": keyword})
+    else:
+        return Q(**{f"{field}__icontains": keyword})
+```
+
+### Unaccent Filter Function
+
+**Location**: `fkapi/api.py:497-502`
+
+```python
+def _unaccent_filter(field: str, value: str) -> Q:
+    """Create an unaccent filter that works with both PostgreSQL and SQLite."""
+    if _is_postgresql():
+        return Q(**{f"{field}__unaccent__icontains": value})
+    else:
+        return Q(**{f"{field}__icontains": value})
+```
+
+### Database Detection
+
+**Location**: `fkapi/api.py:483-486`
+
+```python
+def _is_postgresql() -> bool:
+    """Check if the database is PostgreSQL."""
+    return connection.vendor == "postgresql"
+```
+
+## Caching Strategy
+
+All search endpoints use the same caching pattern:
+
+**Cache Key Generation**:
+```python
+from core.cache_utils import generate_cache_key
+
+cache_key = generate_cache_key("search_clubs", keyword)
+```
+
+**Cache Settings**:
+- **TTL**: 30 minutes (`CACHE_TIMEOUT_MEDIUM`)
+- **Backend**: Redis (via `django-redis`)
+- **Key Prefix**: `fkapi`
+
+**Cache Hit Flow**:
+```python
+cached_result = cache.get(cache_key)
+if cached_result is not None:
+    return cached_result
+
+# Perform search...
+results = execute_search()
+
+cache.set(cache_key, results, timeout=settings.CACHE_TIMEOUT_MEDIUM)
+return results
+```
+
+**Invalidation**: Search caches are invalidated when related models are modified (see [Caching Strategy](/api/caching-strategy))
+
+## Performance Considerations
+
+### Database Indexes
+
+For optimal search performance, ensure these PostgreSQL indexes exist:
+
+```sql
+-- Trigram indexes
+CREATE INDEX idx_club_name_trgm ON core_club USING gin (name gin_trgm_ops);
+CREATE INDEX idx_club_slug_trgm ON core_club USING gin (slug gin_trgm_ops);
+CREATE INDEX idx_brand_name_trgm ON core_brand USING gin (name gin_trgm_ops);
+CREATE INDEX idx_competition_name_trgm ON core_competition USING gin (name gin_trgm_ops);
+CREATE INDEX idx_kit_name_trgm ON core_kit USING gin (name gin_trgm_ops);
+
+-- Unaccent indexes
+CREATE INDEX idx_kit_name_unaccent ON core_kit USING gin (unaccent(name) gin_trgm_ops);
+```
+
+### Query Optimization
+
+All search endpoints use:
+- **`select_related()`** for single foreign keys
+- **`prefetch_related()`** for many-to-many relationships
+- **Result limits** (typically 10 items) to prevent large result sets
+- **Ordering by indexed fields** for fast sorting
+
+### Search Tips
+
+**For best results**:
+- Use specific terms ("Manchester United" vs "Manchester")
+- Include year for kit searches ("Barcelona 2024")
+- Try variations if no results ("Munchen" if "München" doesn't work)
+- Use partial words ("Barce" matches "Barcelona")
+
+**Performance impact**:
+- Short keywords (1-2 chars) may be slower
+- Very broad searches may return many results
+- Specific searches with years are fastest
+
+## Examples
+
+### Search for Club with Accent
+
+```bash
+curl "https://api.example.com/api/clubs/search?keyword=Malaga"
+```
+
+Matches: "Málaga CF", "Málaga B"
+
+### Search Kit with Year
+
+```bash
+curl "https://api.example.com/api/kits/search?keyword=Real Madrid 2024"
+```
+
+Matches kits from:
+- "2024" exact season
+- "2023-24" season
+- "2024-25" season
+
+### Search with Typo
+
+```bash
+curl "https://api.example.com/api/brands/search?keyword=addidas"
+```
+
+Matches: "Adidas" (fuzzy matching corrects typo)
+
+### Search Competition
+
+```bash
+curl "https://api.example.com/api/competitions/search?keyword=champions"
+```
+
+Matches: "UEFA Champions League", "CAF Champions League"
+
+### Season Year Search
+
+```bash
+curl "https://api.example.com/api/seasons/search?keyword=97"
+```
+
+Matches:
+- "1997"
+- "1996-97"
+- "1997-98"
+
+## Related Documentation
+
+- [Bulk Operations](/api/bulk-operations) - Fetch multiple resources efficiently
+- [Caching Strategy](/api/caching-strategy) - How search results are cached
+- [API Overview](/api/overview) - Complete endpoint documentation
